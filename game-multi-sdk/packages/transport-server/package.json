@@ -1,0 +1,19 @@
+{
+  "name": "@game-multi-sdk/transport-server",
+  "version": "0.0.1",
+  "description": "WebSocket authoritative server transport for game-multi-sdk",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@game-multi-sdk/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch"
+  }
+}
