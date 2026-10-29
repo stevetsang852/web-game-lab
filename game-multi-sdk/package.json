@@ -1,0 +1,20 @@
+{
+  "name": "game-multi-sdk",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Multiplayer game SDK monorepo with dual transport modes (Server WebSocket & RTC Host)",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@game-multi-sdk/core && npm run build --workspace=@game-multi-sdk/transport-server && npm run build --workspace=@game-multi-sdk/transport-rtc-host && npm run build --workspace=@game-multi-sdk/react",
+    "typecheck": "npm run build --workspace=@game-multi-sdk/core && npm run typecheck --workspace=@game-multi-sdk/core && npm run typecheck --workspace=@game-multi-sdk/transport-server && npm run typecheck --workspace=@game-multi-sdk/transport-rtc-host && npm run typecheck --workspace=@game-multi-sdk/react"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  }
+}
