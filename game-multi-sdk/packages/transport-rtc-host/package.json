@@ -1,0 +1,25 @@
+{
+  "name": "@game-multi-sdk/transport-rtc-host",
+  "version": "0.0.1",
+  "description": "WebRTC star-topology Host transport for game-multi-sdk",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": : {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "dependencies": {
+    "@game-multi-sdk/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsc -p tsconfig.json --watch"
+  }
+}
