@@ -1,0 +1,11 @@
+services:
+  chat-demo:
+    container_name: game-multi-sdk-chat-demo
+    build:
+      context: ..
+      dockerfile: game-multi-sdk-chat-demo/Dockerfile
+      network: host
+      entitlements:
+        - network.host      
+    ports:
+      - "8080:80"
