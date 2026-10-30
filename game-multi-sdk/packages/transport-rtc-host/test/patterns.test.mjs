@@ -4,8 +4,8 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DefaultConnectionStateMachine } from '../src/patterns/ConnectionStateMachine.ts';
-import { EventBus } from '../src/patterns/EventBus.ts';
+import { DefaultConnectionStateMachine } from '../dist/patterns/ConnectionStateMachine.js';
+import { EventBus } from '../dist/patterns/EventBus.js';
 
 test('ConnectionStateMachine rejects illegal transitions', () => {
   const sm = new DefaultConnectionStateMachine();
@@ -19,7 +19,7 @@ test('ConnectionStateMachine rejects illegal transitions', () => {
 
 test('ConnectionStateMachine notifies listeners', () => {
   const sm = new DefaultConnectionStateMachine();
-  const seen: string[] = [];
+  const seen = [];
   sm.onTransition((from, to) => seen.push(`${from}->${to}`));
   sm.transition('signaling');
   sm.transition('connecting');
@@ -28,8 +28,8 @@ test('ConnectionStateMachine notifies listeners', () => {
 });
 
 test('EventBus delivers and unsubscribes', () => {
-  const bus = new EventBus<{ ping: number }>();
-  const got: number[] = [];
+  const bus = new EventBus();
+  const got = [];
   const off = bus.on('ping', (n) => got.push(n));
   bus.emit('ping', 1);
   bus.emit('ping', 2);

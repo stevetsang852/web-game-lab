@@ -36,10 +36,14 @@ export function ChatRoom() {
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
   const nextMessageId = useRef(0);
+  const transportRef = useRef<RtcHostTransport | null>(null);
+  const closingRef = useRef(false);
+  transportRef.current = transport;
 
   useEffect(() => {
-    if (!transport) return;
-    const unsubscribeMessages = transport.onMessage((event, payload, senderId) => {
+    const current = transport;
+    if (!current) return;
+    const unsubscribeMessages = current.onMessage((event, payload, senderId) => {
       if (event !== 'chat' || !isChatPayload(payload)) return;
       setMessages((current) => [...current, {
         id: nextMessageId.current++,
@@ -47,28 +51,32 @@ export function ChatRoom() {
         text: payload.text,
       }]);
     });
-    const unsubscribePeers = transport.onPeersChanged((nextPeers) => {
+    const unsubscribePeers = current.onPeersChanged((nextPeers) => {
       setPeers(nextPeers);
-      setHostName(transport.getHost()?.userId ?? '');
-      setCurrentHostPeerId(transport.getHost()?.peerId ?? '');
-      setAmHost(transport.isHost());
-      setConnected(transport.isConnected());
+      setHostName(current.getHost()?.userId ?? '');
+      setCurrentHostPeerId(current.getHost()?.peerId ?? '');
+      setAmHost(current.isHost());
+      setConnected(current.isConnected());
     });
-    const unsubscribeHost = transport.onHostChanged((event) => {
+    const unsubscribeHost = current.onHostChanged((event) => {
       setHostName(event.userId);
       setCurrentHostPeerId(event.peerId);
-      setAmHost(transport.isHost());
-      setConnected(transport.isConnected());
+      setAmHost(current.isHost());
+      setConnected(current.isConnected());
       if (event.migrating) setError(`Migrating to host ${event.userId}...`);
       else setError('');
     });
-    const unsubscribeErrors = transport.onError((reason) => setError(reason.message));
+    const unsubscribeErrors = current.onError((reason) => setError(reason.message));
     return () => {
       unsubscribeMessages();
       unsubscribePeers();
       unsubscribeErrors();
       unsubscribeHost();
-      transport.disconnect();
+      // React StrictMode runs cleanup once on mount. Disconnect only if this
+      // transport is actually being replaced, otherwise dev remount kills the room.
+      queueMicrotask(() => {
+        if (transportRef.current !== current) current.disconnect();
+      });
     };
   }, [transport]);
 
@@ -94,18 +102,25 @@ export function ChatRoom() {
       setHostName(nextTransport.getHost()?.userId ?? '');
       setCurrentHostPeerId(nextTransport.getHost()?.peerId ?? '');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason));
+      if (!closingRef.current) {
+        setError(reason instanceof Error ? reason.message : String(reason));
+      }
+      closingRef.current = false;
       setTransport(null);
       setConnected(false);
+      setConnecting(false);
     } finally {
       setConnecting(false);
     }
   }
 
   function disconnect() {
+    closingRef.current = true;
     transport?.disconnect();
     setTransport(null);
+    setConnecting(false);
     setConnected(false);
+    setError('');
     setPeers([]);
     setHostName('');
     setCurrentHostPeerId('');
@@ -231,7 +246,7 @@ export function ChatRoom() {
               </details>
               <button className="primary-button" type="submit">Connect to room <span aria-hidden="true">→</span></button>
             </fieldset>
-            {transport && !connecting && <button className="text-button" type="button" onClick={disconnect}>Disconnect / stop reconnecting</button>}
+            {transport && <button className="text-button" type="button" onClick={disconnect}>Disconnect / stop reconnecting</button>}
             {(connecting || transport) && <p className="form-note" role="status">{connecting ? 'Connecting...' : migrationMode === 'auto' ? 'Connection lost. Reconnecting or electing a new host...' : 'Connection lost. Waiting for the selected host to reconnect...'}</p>}
             {error && <p className="error-message" role="alert">{error}</p>}
             <p className="form-note">Use the same topology in every window. Full Mesh sends directly between peers; Star relays through the host. Start with 4-6 players and load-test. Neither mode replicates game state. TURN may relay network traffic.</p>
@@ -248,6 +263,13 @@ export function ChatRoom() {
             </div>
             <div className="host-controls">
               <p className="form-note">Topology: {topology === 'full-mesh' ? 'Full Mesh' : 'Star'} | {topology === 'full-mesh' ? 'Coordinator' : 'Host'}: {hostName}{amHost ? ' (you)' : ''} | Migration: {migrationMode}</p>
+              <p className="party-heading">Party · {peers.length + 1}</p>
+              <ul className="party-list" aria-label="Party members">
+                <li className="party-member is-you">{userId} (you){amHost ? ' · host' : ''}</li>
+                {peers.map((peerId) => (
+                  <li className="party-member" key={peerId}>{peerId}</li>
+                ))}
+              </ul>
               <p className="form-note">Current host PeerJS ID: {currentHostPeerId} (share with new joiners; keep the same Room ID)</p>
               {amHost && migrationMode !== 'disabled' && peers.map((peerId) => (
                 <button className="text-button" type="button" key={peerId} onClick={() => transferHost(peerId)}>

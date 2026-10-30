@@ -192,6 +192,10 @@ input:focus, select:focus { border-color: #8870f3; box-shadow: 0 0 0 3px rgb(136
 .inline-error { padding: 0 24px 12px; }
 .host-controls { padding: 12px 24px; border-bottom: 1px solid #252a38; }
 .host-controls .form-note { text-align: left; }
+.party-heading { margin: 8px 0 6px; color: #c9c3ef; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.party-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; padding: 0; list-style: none; }
+.party-member { padding: 4px 8px; border: 1px solid #343a4d; border-radius: 999px; background: #1a1f2c; color: #e4e6ed; font-size: 12px; }
+.party-member.is-you { border-color: #54459a; background: #292342; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
 footer { margin-top: 18px; color: #767d8d; font-size: 11px; }

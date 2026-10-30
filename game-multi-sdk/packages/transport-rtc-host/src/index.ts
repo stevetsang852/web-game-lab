@@ -14,12 +14,12 @@ import type {
   TransportErrorHandler,
   TransportOptions,
 } from '@game-multi-sdk/core';
-import { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine';
-import type { ConnectionStateName } from './patterns/ConnectionStateMachine';
-import { EventBus } from './patterns/EventBus';
-import { FullMeshStrategy } from './patterns/FullMeshStrategy';
-import { StarStrategy } from './patterns/StarStrategy';
-import type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy';
+import { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine.js';
+import type { ConnectionStateName } from './patterns/ConnectionStateMachine.js';
+import { EventBus } from './patterns/EventBus.js';
+import { FullMeshStrategy } from './patterns/FullMeshStrategy.js';
+import { StarStrategy } from './patterns/StarStrategy.js';
+import type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy.js';
 
 type RtcPeerFactory = (options: RtcPeerOptions) => RtcPeer;
 
@@ -83,6 +83,7 @@ export class RtcHostTransport implements IGameTransport {
   private members: RoomMember[] = [];
   private failedCandidates = new Set<string>();
   private migrationEvent: HostChangedEvent | null = null;
+  private connectReject: ((error: Error) => void) | null = null;
   private roomTerm = 0;
   private retiredConnections = new Set<RtcDataConnection>();
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
@@ -165,6 +166,7 @@ export class RtcHostTransport implements IGameTransport {
       const finish = () => {
         if (settled) return;
         settled = true;
+        this.connectReject = null;
         this.connecting = false;
         this.connected = true;
         resolve();
@@ -173,8 +175,16 @@ export class RtcHostTransport implements IGameTransport {
         this.emitError(error);
         if (settled) return;
         settled = true;
+        this.connectReject = null;
         this.connecting = false;
         this.disconnect();
+        reject(error);
+      };
+      this.connectReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        this.connectReject = null;
+        this.connecting = false;
         reject(error);
       };
       this.setupPeer(peer, options, finish, fail);
@@ -182,6 +192,8 @@ export class RtcHostTransport implements IGameTransport {
   }
 
   disconnect(): void {
+    const rejectConnect = this.connectReject;
+    this.connectReject = null;
     this.manuallyDisconnected = true;
     if (this.stateMachine.canTransition('closed')) this.stateMachine.transition('closed');
     this.clearReconnectTimer();
@@ -214,6 +226,7 @@ export class RtcHostTransport implements IGameTransport {
     for (const connection of new Set(connections)) connection.close();
     peer?.destroy();
     this.notifyPeersChanged();
+    rejectConnect?.(new Error('RTC connection was disconnected.'));
   }
 
   send(event: string, payload: unknown, options?: SendOptions): void {
@@ -282,26 +295,33 @@ export class RtcHostTransport implements IGameTransport {
     return this.connected;
   }
 
+  isHost(): boolean {
+    return this.role === 'host';
+  }
+
   private buildTopologyContext(): TopologyContext {
+    const transport = this;
     return {
-      ownPeerId: this.ownPeerId,
-      hostPeerId: this.hostPeerId,
-      hostUserId: this.hostUserId,
-      isHost: this.isHost(),
-      members: this.members,
-      transportOptions: this.transportOptions,
-      migrationMode: this.migrationMode,
-      migrationTimeoutMs: this.migrationTimeoutMs,
-      reconnectEnabled: this.reconnectEnabled,
-      reconnectIntervalMs: this.reconnectIntervalMs,
-      awaitingHostConfirmation: this.awaitingHostConfirmation,
-      peer: this.peer,
+      get ownPeerId() { return transport.ownPeerId; },
+      get hostPeerId() { return transport.hostPeerId; },
+      get hostUserId() { return transport.hostUserId; },
+      get isHost() { return transport.isHost(); },
+      get members() { return transport.members; },
+      get transportOptions() { return transport.transportOptions; },
+      get migrationMode() { return transport.migrationMode; },
+      get migrationTimeoutMs() { return transport.migrationTimeoutMs; },
+      get reconnectEnabled() { return transport.reconnectEnabled; },
+      get reconnectIntervalMs() { return transport.reconnectIntervalMs; },
+      get awaitingHostConfirmation() { return transport.awaitingHostConfirmation; },
+      get peer() { return transport.peer; },
       emitError: (e) => this.emitError(e),
       notifyPeersChanged: () => this.notifyPeersChanged(),
       publishRoster: () => this.publishRoster(),
       handlePacket: (data, role, clientUserId) => this.handlePacket(data, role, clientUserId),
       scheduleReconnect: (mode) => this.scheduleReconnect(mode),
       scheduleElection: () => this.scheduleElection(),
+      noteHostActivity: () => { this.lastHostActivity = Date.now(); },
+      markHostUnconfirmed: () => { this.awaitingHostConfirmation = true; },
       clearReconnectTimer: () => this.clearReconnectTimer(),
       setClientConnection: (conn) => { this.clientConnection = conn; },
       setConnected: (value) => { this.connected = value; },
@@ -600,9 +620,9 @@ export class RtcHostTransport implements IGameTransport {
       this.clientConnection = meshConns.get(target.peerId) ?? null;
       if (this.isHost()) {
         for (const [peerId, connection] of meshConns) {
-          const userId = [...meshConns.keys()].includes(peerId) ? peerId : undefined;
-          // userId mapping lives inside strategy; host re-adopts via connections map already
-          if (connection.open) this.connections.set(peerId, connection);
+          if (!connection.open) continue;
+          const userId = this.strategy.getLinkedUser(peerId);
+          if (userId) this.connections.set(userId, connection);
         }
       }
     }
@@ -722,6 +742,13 @@ export class RtcHostTransport implements IGameTransport {
     }
     if (data.type !== 'message' || typeof data.event !== 'string') return;
 
+    // Mesh delivers on the direct data channel. The sender is that peer, and the host must not relay.
+    if (this.topology === 'full-mesh') {
+      if (!clientUserId) return;
+      this.events.emit('message', { event: data.event, payload: data.payload, senderId: clientUserId });
+      return;
+    }
+
     const senderId = role === 'host' ? clientUserId : this.hostUserId;
     if (!senderId) return;
 
@@ -793,12 +820,12 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
-export { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine';
-export type { ConnectionStateName, ConnectionStateMachine } from './patterns/ConnectionStateMachine';
-export { EventBus } from './patterns/EventBus';
-export { FullMeshStrategy } from './patterns/FullMeshStrategy';
-export { StarStrategy } from './patterns/StarStrategy';
-export type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy';
+export { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine.js';
+export type { ConnectionStateName, ConnectionStateMachine } from './patterns/ConnectionStateMachine.js';
+export { EventBus } from './patterns/EventBus.js';
+export { FullMeshStrategy } from './patterns/FullMeshStrategy.js';
+export { StarStrategy } from './patterns/StarStrategy.js';
+export type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy.js';
 
 
 

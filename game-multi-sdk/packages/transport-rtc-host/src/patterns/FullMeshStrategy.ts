@@ -5,7 +5,7 @@
  * See https://refactoring.guru/design-patterns/strategy
  */
 import type { RtcDataConnection, RtcPeer, SendOptions } from '@game-multi-sdk/core';
-import type { TopologyContext, TopologyStrategy } from './TopologyStrategy';
+import type { TopologyContext, TopologyStrategy } from './TopologyStrategy.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -19,6 +19,9 @@ function getUserId(metadata: unknown): string | null {
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
+
+/** ICE and DTLS often outlive the 5s host-migration deadline. Do not abort a join that early. */
+const DATA_CHANNEL_OPEN_TIMEOUT_MS = 20_000;
 
 export class FullMeshStrategy implements TopologyStrategy {
   readonly name = 'full-mesh' as const;
@@ -116,15 +119,22 @@ export class FullMeshStrategy implements TopologyStrategy {
     }
   }
 
-  getPeers(_context: TopologyContext): string[] {
-    if (!this.joined) return [];
+  getPeers(context: TopologyContext): string[] {
+    if (!this.isAdmitted(context)) return [];
     return [...this.users]
       .filter(([peerId]) => this.connections.get(peerId)?.open && this.remoteReady.has(peerId))
       .map(([, userId]) => userId);
   }
 
-  isConnected(_context: TopologyContext): boolean {
-    return this.joined;
+  isConnected(context: TopologyContext): boolean {
+    return this.isAdmitted(context);
+  }
+
+  private isAdmitted(context: TopologyContext): boolean {
+    if (!this.joined) return false;
+    if (context.isHost) return true;
+    const userId = context.transportOptions?.userId;
+    return context.members.some((member) => member.peerId === context.ownPeerId && member.userId === userId);
   }
 
   startMaintenance(context: TopologyContext): void {
@@ -171,15 +181,14 @@ export class FullMeshStrategy implements TopologyStrategy {
           connection.close();
         } else if (connection.open) {
           this.users.set(member.peerId, member.userId);
-          this.confirmReady(member.peerId, connection);
+          this.confirmReady(context, member.peerId, connection);
         }
         continue;
       }
-      // Aggressive dialer: both sides may initiate. Skip only if we already attempted and reconnect is disabled.
-      // Prefer the lexicographically smaller peerId as the primary dialer to reduce glare, but allow the other side to retry.
-      const shouldSkip = (!context.reconnectEnabled && this.attempted.has(member.peerId)) ||
-        (context.ownPeerId > member.peerId && this.attempted.has(member.peerId));
-      if (shouldSkip) continue;
+      // Only the lower peer id dials. Two simultaneous offers glare and PeerJS aborts both
+      // data channels, which is the "signaling works, DataChannel never opens" failure.
+      if (context.ownPeerId > member.peerId) continue;
+      if (!context.reconnectEnabled && this.attempted.has(member.peerId)) continue;
       this.attempted.add(member.peerId);
       try {
         this.trackConnection(context, peer, peer.connect(member.peerId, this.meshMetadata(context, 'mesh')), member.userId, false);
@@ -232,10 +241,42 @@ export class FullMeshStrategy implements TopologyStrategy {
     this.connections.set(peerId, connection);
     this.claims.set(peerId, claimedUserId);
     const current = () => context.peer === peer && this.connections.get(peerId) === connection;
+    let channelOpen = false;
+    let admitted = false;
+    let initialFailed = false;
+    const failInitial = (error: Error) => {
+      if (initialFailed || admitted) return;
+      initialFailed = true;
+      // Reject the joiner's connect() so the demo can leave "Connecting" without a reload.
+      if (onFailure && peerId === context.hostPeerId) onFailure(error);
+      else context.emitError(error);
+    };
+    const armDeadline = (delayMs: number, phase: 'open' | 'ready') => {
+      this.clearDeadline(connection);
+      const deadline = setTimeout(() => {
+        if (!current()) return;
+        if (phase === 'open') {
+          if (channelOpen || connection.open) return;
+          failInitial(new Error(`RTC mesh connection to "${peerId}" timed out before the data channel opened.`));
+          connection.close();
+          return;
+        }
+        if (peerId === context.hostPeerId && onReady && !admitted) {
+          failInitial(new Error(`RTC mesh connection to "${peerId}" timed out.`));
+          connection.close();
+          return;
+        }
+        if (this.remoteReady.has(peerId)) return;
+        context.emitError(new Error(`RTC mesh connection to "${peerId}" timed out.`));
+        connection.close();
+      }, delayMs);
+      this.deadlines.set(connection, deadline);
+    };
+    armDeadline(Math.max(DATA_CHANNEL_OPEN_TIMEOUT_MS, context.migrationTimeoutMs), 'open');
 
     connection.onOpen(() => {
       if (!current()) return;
-      this.clearDeadline(connection);
+      channelOpen = true;
       const userId = claimedUserId ?? this.users.get(peerId);
       if (userId) this.users.set(peerId, userId);
       this.activity.set(peerId, Date.now());
@@ -243,15 +284,10 @@ export class FullMeshStrategy implements TopologyStrategy {
         context.addConnection(userId ?? peerId, connection);
         context.publishRoster();
       }
-      this.confirmReady(peerId, connection);
+      this.confirmReady(context, peerId, connection);
+      // mesh-ready / roster admission is a separate deadline from ICE.
+      if (!(admitted && this.remoteReady.has(peerId))) armDeadline(context.migrationTimeoutMs, 'ready');
       context.notifyPeersChanged();
-      if (onReady && peerId === context.hostPeerId) {
-        context.setConnected(true);
-        context.setConnecting(false);
-        context.setReconnectMode(null);
-        context.clearReconnectTimer();
-        onReady();
-      }
     });
 
     connection.onData((data) => {
@@ -259,14 +295,33 @@ export class FullMeshStrategy implements TopologyStrategy {
       this.activity.set(peerId, Date.now());
       if (isRecord(data) && data.type === 'mesh-ready') {
         this.remoteReady.add(peerId);
-        this.clearDeadline(connection);
+        if (admitted || peerId !== context.hostPeerId) this.clearDeadline(connection);
         context.notifyPeersChanged();
         return;
       }
       if (isRecord(data) && data.type === 'heartbeat') return;
       const userId = this.users.get(peerId) ?? claimedUserId;
-      if (userId) {
-        context.handlePacket(data, context.isHost && isJoin ? 'host' : 'client', userId);
+      const type = isRecord(data) ? data.type : '';
+      const control = type === 'roster' || type === 'migrate' || type === 'hello';
+      if (control && peerId !== context.hostPeerId) {
+        context.emitError(new Error('RTC mesh ignored a control packet that did not come from the coordinator.'));
+        return;
+      }
+      // Roster must be accepted before the remote userId is known, or the joiner never sends mesh-ready.
+      if (!userId && !control) return;
+      context.handlePacket(data, context.isHost && isJoin ? 'host' : 'client', userId ?? undefined);
+      if (type !== 'roster') return;
+      this.syncFromRoster(context);
+      const admittedByRoster = context.members.some((member) =>
+        member.peerId === context.ownPeerId && member.userId === context.transportOptions?.userId);
+      if (!admitted && admittedByRoster && onReady && peerId === context.hostPeerId) {
+        admitted = true;
+        this.clearDeadline(connection);
+        context.setConnected(true);
+        context.setConnecting(false);
+        context.setReconnectMode(null);
+        context.clearReconnectTimer();
+        onReady();
       }
     });
 
@@ -279,9 +334,15 @@ export class FullMeshStrategy implements TopologyStrategy {
       this.remoteReady.delete(peerId);
       this.readySent.delete(peerId);
       this.activity.delete(peerId);
-      this.attempted.delete(peerId);
+      if (context.reconnectEnabled) this.attempted.delete(peerId);
       if (isJoin && claimedUserId) context.deleteConnection(claimedUserId);
       context.notifyPeersChanged();
+      if (!admitted && peerId === context.hostPeerId) {
+        failInitial(new Error(channelOpen
+          ? `RTC mesh connection to "${peerId}" closed before the room admitted this peer.`
+          : `RTC mesh connection to "${peerId}" closed before the data channel opened.`));
+        return;
+      }
       if (peerId === context.hostPeerId) {
         context.setClientConnection(null);
         context.setConnected(false);
@@ -291,18 +352,14 @@ export class FullMeshStrategy implements TopologyStrategy {
     });
 
     connection.onError((error) => {
+      if (!channelOpen && !connection.open && peerId === context.hostPeerId) {
+        failInitial(error);
+        connection.close();
+        return;
+      }
       context.emitError(error);
       if (!connection.open) connection.close();
     });
-
-    // Deadline for handshake
-    const deadline = setTimeout(() => {
-      if (this.connections.get(peerId) === connection && !this.remoteReady.has(peerId)) {
-        context.emitError(new Error(`RTC mesh connection to "${peerId}" timed out.`));
-        connection.close();
-      }
-    }, context.migrationTimeoutMs);
-    this.deadlines.set(connection, deadline);
   }
 
   private clearDeadline(connection: RtcDataConnection): void {
@@ -311,16 +368,34 @@ export class FullMeshStrategy implements TopologyStrategy {
     this.deadlines.delete(connection);
   }
 
-  private confirmReady(peerId: string, connection: RtcDataConnection): void {
+  /** Learn user ids from the live roster, finish mesh-ready, and dial missing direct edges. */
+  private syncFromRoster(context: TopologyContext): void {
+    for (const member of context.members) {
+      if (member.peerId === context.ownPeerId) continue;
+      const connection = this.connections.get(member.peerId);
+      if (!connection) continue;
+      this.users.set(member.peerId, member.userId);
+      this.claims.set(member.peerId, member.userId);
+      if (connection.open) this.confirmReady(context, member.peerId, connection);
+    }
+    this.reconcile(context);
+  }
+
+  private confirmReady(context: TopologyContext, peerId: string, connection: RtcDataConnection): void {
     if (!this.joined || !this.users.has(peerId) || !connection.open) return;
+    // Direct edges stay quiet until this peer has been admitted, so a half-joined
+    // client cannot appear in anyone else's party list.
+    if (!this.isAdmitted(context) && peerId !== context.hostPeerId) return;
     if (!this.readySent.has(peerId)) {
       this.readySent.add(peerId);
       connection.send({ type: 'mesh-ready' });
     }
-    if (this.remoteReady.has(peerId)) this.clearDeadline(connection);
   }
 
   // Accessors for transport during transition
   getConnections(): Map<string, RtcDataConnection> { return this.connections; }
+  getLinkedUser(peerId: string): string | null {
+    return this.users.get(peerId) ?? this.claims.get(peerId) ?? null;
+  }
   isJoined(): boolean { return this.joined; }
 }

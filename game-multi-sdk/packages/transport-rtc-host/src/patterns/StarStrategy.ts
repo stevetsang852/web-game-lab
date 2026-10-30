@@ -5,7 +5,7 @@
  * See https://refactoring.guru/design-patterns/strategy
  */
 import type { RtcDataConnection, RtcPeer, SendOptions } from '@game-multi-sdk/core';
-import type { TopologyContext, TopologyStrategy } from './TopologyStrategy';
+import type { TopologyContext, TopologyStrategy } from './TopologyStrategy.js';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -20,10 +20,13 @@ function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
 
+const DATA_CHANNEL_OPEN_TIMEOUT_MS = 20_000;
+
 export class StarStrategy implements TopologyStrategy {
   readonly name = 'star' as const;
   private clientConnection: RtcDataConnection | null = null;
   private hostConnections = new Map<string, RtcDataConnection>();
+  private openTimer: ReturnType<typeof setTimeout> | null = null;
 
   onPeerOpen(_context: TopologyContext): void {
     // Host readiness and roster publish remain coordinated by transport.
@@ -106,10 +109,16 @@ export class StarStrategy implements TopologyStrategy {
   }
 
   cleanup(): void {
+    this.clearOpenTimer();
     this.clientConnection?.close();
     for (const c of this.hostConnections.values()) c.close();
     this.clientConnection = null;
     this.hostConnections.clear();
+  }
+
+  private clearOpenTimer(): void {
+    if (this.openTimer !== null) clearTimeout(this.openTimer);
+    this.openTimer = null;
   }
 
   getHostConnections(): Map<string, RtcDataConnection> {
@@ -139,12 +148,14 @@ export class StarStrategy implements TopologyStrategy {
       }
       this.hostConnections.set(userId, connection);
       context.addConnection(userId, connection);
+      context.noteHostActivity();
       context.notifyPeersChanged();
       connection.send({ type: 'hello', userId: context.transportOptions?.userId });
       context.publishRoster();
     });
     connection.onData((data) => {
       if (this.hostConnections.get(userId) !== connection) return;
+      context.noteHostActivity();
       context.handlePacket(data, 'host', userId);
     });
     connection.onClose(() => {
@@ -165,8 +176,27 @@ export class StarStrategy implements TopologyStrategy {
     onReady?: () => void,
     onFailure?: (error: Error) => void,
   ): void {
+    let opened = false;
+    let failed = false;
+    const fail = (error: Error) => {
+      if (failed || opened || this.clientConnection !== connection) return;
+      failed = true;
+      this.clearOpenTimer();
+      if (onFailure) onFailure(error);
+      else context.emitError(error);
+    };
+    this.clearOpenTimer();
+    this.openTimer = setTimeout(() => {
+      if (opened || connection.open) return;
+      fail(new Error('RTC host data channel timed out before it opened.'));
+      connection.close();
+    }, Math.max(context.migrationTimeoutMs, DATA_CHANNEL_OPEN_TIMEOUT_MS));
+
     connection.onOpen(() => {
       if (this.clientConnection !== connection || context.peer !== peer) return;
+      opened = true;
+      this.clearOpenTimer();
+      context.noteHostActivity();
       context.setConnected(true);
       context.setConnecting(false);
       context.setReconnectMode(null);
@@ -176,22 +206,35 @@ export class StarStrategy implements TopologyStrategy {
     });
     connection.onData((data) => {
       if (this.clientConnection !== connection) return;
+      context.noteHostActivity();
       context.handlePacket(data, 'client');
     });
     connection.onClose(() => {
+      this.clearOpenTimer();
       if (this.clientConnection !== connection) return;
+      if (!opened) {
+        fail(new Error('RTC host connection closed before the data channel opened.'));
+        this.clientConnection = null;
+        context.setClientConnection(null);
+        return;
+      }
       this.clientConnection = null;
       context.setClientConnection(null);
       context.setConnected(false);
+      context.markHostUnconfirmed();
       context.notifyPeersChanged();
       context.scheduleReconnect('client');
       context.scheduleElection();
     });
     connection.onError((error) => {
-      if (this.clientConnection === connection) {
-        context.emitError(error);
+      if (this.clientConnection !== connection) return;
+      if (!opened) {
+        fail(error);
         connection.close();
+        return;
       }
+      context.emitError(error);
+      connection.close();
     });
   }
 }
