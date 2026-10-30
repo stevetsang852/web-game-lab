@@ -152,6 +152,8 @@ replace the `file:` dependencies in `package.json` with the published versions.
 
 Demo version: **0.2.2**. It displays the SDK version (`SDK_VERSION` from `@game-multi-sdk/core`, currently **0.1.3**) in the UI header and footer.
 
+The four-browser Full Mesh procedure is in [TEST.md](../TEST.md).
+
 **Rule**: When updating the demo or SDK code, also update the versions in `package.json` and the `SDK_VERSION` constant.
 
 ## Support the Developer (PayMe)

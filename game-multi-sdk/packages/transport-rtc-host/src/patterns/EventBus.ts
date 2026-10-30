@@ -4,7 +4,7 @@
  */
 export type Unsubscribe = () => void;
 
-export class EventBus<T extends Record<string, unknown>> {
+export class EventBus<T extends object> {
   private listeners = new Map<keyof T, Set<(payload: T[keyof T]) => void>>();
 
   on<K extends keyof T>(event: K, listener: (payload: T[K]) => void): Unsubscribe {
