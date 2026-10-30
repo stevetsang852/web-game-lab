@@ -14,6 +14,12 @@ import type {
   TransportErrorHandler,
   TransportOptions,
 } from '@game-multi-sdk/core';
+import { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine';
+import type { ConnectionStateName } from './patterns/ConnectionStateMachine';
+import { EventBus } from './patterns/EventBus';
+import { FullMeshStrategy } from './patterns/FullMeshStrategy';
+import { StarStrategy } from './patterns/StarStrategy';
+import type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy';
 
 type RtcPeerFactory = (options: RtcPeerOptions) => RtcPeer;
 
@@ -33,12 +39,27 @@ interface RoomMember extends HostInfo {
   eligible?: boolean;
 }
 
+interface TransportEvents {
+  message: { event: string; payload: unknown; senderId: string };
+  peersChanged: string[];
+  error: Error;
+  hostChanged: HostChangedEvent;
+}
+
 export class RtcHostTransport implements IGameTransport {
   readonly category: GameCategory = 'RTC_HOST';
   private readonly createPeer?: RtcPeerFactory;
+  private readonly stateMachine = new DefaultConnectionStateMachine();
+  private readonly events = new EventBus<TransportEvents>();
+  private strategy: TopologyStrategy | null = null;
 
   constructor(createPeer?: RtcPeerFactory) {
     this.createPeer = createPeer;
+  }
+
+  /** Current high-level connection state (State pattern). */
+  get connectionState(): ConnectionStateName {
+    return this.stateMachine.state;
   }
 
   private peer: RtcPeer | null = null;
@@ -68,20 +89,7 @@ export class RtcHostTransport implements IGameTransport {
   private lastHostActivity = 0;
   private awaitingHostConfirmation = false;
   private topology: RtcTopology = 'full-mesh';
-  private meshJoined = false;
-  private meshConnections = new Map<string, RtcDataConnection>();
-  private meshUsers = new Map<string, string>();
-  private meshClaims = new Map<string, string | null>();
-  private meshRemoteReady = new Set<string>();
-  private meshReadySent = new Set<string>();
-  private meshActivity = new Map<string, number>();
-  private meshDeadlines = new Map<RtcDataConnection, ReturnType<typeof setTimeout>>();
-  private meshRetryTimer: ReturnType<typeof setInterval> | null = null;
-  private meshAttempted = new Set<string>();
-  private hostChangedHandlers = new Set<HostChangedHandler>();
-  private messageHandlers = new Set<MessageHandler>();
-  private peersChangedHandlers = new Set<PeersChangedHandler>();
-  private errorHandlers = new Set<TransportErrorHandler>();
+  // All notifications go through EventBus (Observer pattern).
 
   async connect(options: TransportOptions): Promise<void> {
     if (this.peer || this.connecting || this.transportOptions) {
@@ -117,11 +125,13 @@ export class RtcHostTransport implements IGameTransport {
     }
 
     this.connecting = true;
+    this.stateMachine.transition('signaling');
     this.manuallyDisconnected = false;
     this.reconnectEnabled = options.reconnect?.enabled ?? true;
     this.reconnectIntervalMs = reconnectIntervalMs;
     this.transportOptions = options;
     this.topology = topology;
+    this.strategy = topology === 'full-mesh' ? new FullMeshStrategy() : new StarStrategy();
     this.migrationMode = migrationMode;
     this.migrationTimeoutMs = migrationTimeoutMs;
     this.role = role;
@@ -173,11 +183,12 @@ export class RtcHostTransport implements IGameTransport {
 
   disconnect(): void {
     this.manuallyDisconnected = true;
+    if (this.stateMachine.canTransition('closed')) this.stateMachine.transition('closed');
     this.clearReconnectTimer();
     this.clearMigrationTimer();
     this.stopHeartbeat();
-    this.stopMeshTimers();
-    this.meshJoined = false;
+    this.strategy?.cleanup();
+    this.strategy = null;
     const peer = this.peer;
     this.peer = null;
     this.connected = false;
@@ -193,14 +204,6 @@ export class RtcHostTransport implements IGameTransport {
     this.awaitingHostConfirmation = false;
 
     const connections = [...this.connections.values()];
-    connections.push(...this.meshConnections.values());
-    this.meshConnections.clear();
-    this.meshUsers.clear();
-    this.meshClaims.clear();
-    this.meshRemoteReady.clear();
-    this.meshReadySent.clear();
-    this.meshActivity.clear();
-    this.meshAttempted.clear();
     connections.push(...this.retiredConnections);
     this.retiredConnections.clear();
     if (this.clientConnection) connections.push(this.clientConnection);
@@ -226,75 +229,32 @@ export class RtcHostTransport implements IGameTransport {
       payload,
       ...(options?.targetId ? { targetId: options.targetId } : {}),
     };
-    if (this.topology === 'full-mesh') {
-      if (options?.targetId) {
-        const entry = [...this.meshUsers].find(([peerId, userId]) =>
-          userId === options.targetId || peerId === options.targetId);
-        const connection = entry && this.meshConnections.get(entry[0]);
-        if (!connection?.open || !entry || !this.meshRemoteReady.has(entry[0])) {
-          throw new Error(`RTC peer "${options.targetId}" is not connected.`);
-        }
-        connection.send(packet);
-      } else {
-        const missing = this.members.filter((member) => member.peerId !== this.ownPeerId &&
-          (!this.meshConnections.get(member.peerId)?.open || !this.meshRemoteReady.has(member.peerId)));
-        if (missing.length) {
-          this.emitError(new Error(`RTC mesh broadcast cannot reach: ${missing.map((member) => member.userId).join(', ')}.`));
-        }
-        for (const [peerId, connection] of this.meshConnections) {
-          if (connection.open && this.meshUsers.has(peerId) && this.meshRemoteReady.has(peerId)) connection.send(packet);
-        }
-      }
+    if (this.strategy) {
+      this.strategy.send(this.buildTopologyContext(), event, payload, options);
       return;
     }
-    if (this.isHost()) {
-      if (options?.targetId) {
-        const connection = this.connections.get(options.targetId);
-        if (!connection?.open) {
-          throw new Error(`RTC peer "${options.targetId}" is not connected.`);
-        }
-        connection.send(packet);
-        return;
-      }
-
-      for (const connection of this.connections.values()) {
-        if (connection.open) connection.send(packet);
-      }
-      return;
-    }
-
-    if (options?.targetId && options.targetId !== this.hostPeerId && options.targetId !== this.hostUserId) {
-      throw new Error(`RTC peer "${options.targetId}" is not connected.`);
-    }
-    if (!this.clientConnection?.open) {
-      throw new Error('RTC host connection is not open.');
-    }
-    this.clientConnection.send(packet);
+    throw new Error('RTC transport has no topology strategy.');
   }
 
   onMessage(callback: MessageHandler): () => void {
-    this.messageHandlers.add(callback);
-    return () => this.messageHandlers.delete(callback);
+    return this.events.on('message', (data) => callback(data.event, data.payload, data.senderId));
   }
 
   onPeersChanged(callback: PeersChangedHandler): () => void {
-    this.peersChangedHandlers.add(callback);
-    return () => this.peersChangedHandlers.delete(callback);
+    return this.events.on('peersChanged', callback);
   }
 
   onError(callback: TransportErrorHandler): () => void {
-    this.errorHandlers.add(callback);
-    return () => this.errorHandlers.delete(callback);
+    return this.events.on('error', callback);
+  }
+
+  onHostChanged(callback: HostChangedHandler): () => void {
+    return this.events.on('hostChanged', callback);
   }
 
   getHost(): HostInfo | null {
     if (!this.transportOptions) return null;
     return { userId: this.hostUserId, peerId: this.hostPeerId };
-  }
-
-  onHostChanged(callback: HostChangedHandler): () => void {
-    this.hostChangedHandlers.add(callback);
-    return () => this.hostChangedHandlers.delete(callback);
   }
 
   transferHost(targetId: string): void {
@@ -313,22 +273,46 @@ export class RtcHostTransport implements IGameTransport {
   }
 
   getPeers(): string[] {
-    if (this.topology === 'full-mesh') {
-      if (!this.meshJoined) return [];
-      return [...this.meshUsers]
-        .filter(([peerId]) => this.meshConnections.get(peerId)?.open && this.meshRemoteReady.has(peerId))
-        .map(([, userId]) => userId);
-    }
-    if (!this.connected) return [];
-    return this.isHost() ? [...this.connections.keys()] : (this.hostUserId ? [this.hostUserId] : []);
-  }
-
-  isHost(): boolean {
-    return this.role === 'host';
+    if (this.strategy) return this.strategy.getPeers(this.buildTopologyContext());
+    return [];
   }
 
   isConnected(): boolean {
-    return this.topology === 'full-mesh' ? this.meshJoined && this.peer !== null : this.connected;
+    if (this.strategy) return this.strategy.isConnected(this.buildTopologyContext()) && this.peer !== null;
+    return this.connected;
+  }
+
+  private buildTopologyContext(): TopologyContext {
+    return {
+      ownPeerId: this.ownPeerId,
+      hostPeerId: this.hostPeerId,
+      hostUserId: this.hostUserId,
+      isHost: this.isHost(),
+      members: this.members,
+      transportOptions: this.transportOptions,
+      migrationMode: this.migrationMode,
+      migrationTimeoutMs: this.migrationTimeoutMs,
+      reconnectEnabled: this.reconnectEnabled,
+      reconnectIntervalMs: this.reconnectIntervalMs,
+      awaitingHostConfirmation: this.awaitingHostConfirmation,
+      peer: this.peer,
+      emitError: (e) => this.emitError(e),
+      notifyPeersChanged: () => this.notifyPeersChanged(),
+      publishRoster: () => this.publishRoster(),
+      handlePacket: (data, role, clientUserId) => this.handlePacket(data, role, clientUserId),
+      scheduleReconnect: (mode) => this.scheduleReconnect(mode),
+      scheduleElection: () => this.scheduleElection(),
+      clearReconnectTimer: () => this.clearReconnectTimer(),
+      setClientConnection: (conn) => { this.clientConnection = conn; },
+      setConnected: (value) => { this.connected = value; },
+      setConnecting: (value) => { this.connecting = value; },
+      setReconnectMode: (mode) => { this.reconnectMode = mode; },
+      getMembers: () => this.members,
+      setMembers: (members) => { this.members = members; },
+      addConnection: (userId, connection) => { this.connections.set(userId, connection); },
+      getConnection: (userId) => this.connections.get(userId),
+      deleteConnection: (userId) => { this.connections.delete(userId); },
+    };
   }
 
   private listenToConnection(
@@ -420,8 +404,9 @@ export class RtcHostTransport implements IGameTransport {
         this.hostPeerId = peerId;
         this.hostUserId = options.userId;
         this.connected = true;
+        if (this.stateMachine.canTransition('connected')) this.stateMachine.transition('connected');
         if (this.topology === 'full-mesh') {
-          this.meshJoined = true;
+          this.strategy?.onPeerOpen(this.buildTopologyContext());
           this.publishRoster();
         }
         this.connecting = false;
@@ -444,38 +429,11 @@ export class RtcHostTransport implements IGameTransport {
           connection.close();
           return;
         }
-        if (this.topology === 'full-mesh') {
-          this.acceptMeshConnection(peer, connection);
+        if (this.strategy) {
+          this.strategy.acceptIncoming(this.buildTopologyContext(), peer, connection);
           return;
         }
-        if (!this.isHost()) {
-          this.emitError(new Error('RTC incoming connection rejected: this peer is not the host.'));
-          connection.close();
-          return;
-        }
-        const userId = getUserId(connection.metadata);
-        if (!userId || userId === options.userId) {
-          this.emitError(new Error('RTC client connection requires a unique non-host userId.'));
-          connection.close();
-          return;
-        }
-
-        this.listenToConnection(connection, 'host', () => {
-          if (!this.isHost() || this.peer !== peer) {
-            connection.close();
-            return;
-          }
-          const existing = this.connections.get(userId);
-          if (existing && existing !== connection) {
-            this.emitError(new Error(`RTC user "${userId}" is already connected.`));
-            connection.close();
-            return;
-          }
-          this.connections.set(userId, connection);
-          this.notifyPeersChanged();
-          connection.send({ type: 'hello', userId: options.userId } satisfies WireHello);
-          this.publishRoster();
-        }, userId);
+        connection.close();
       });
   }
 
@@ -485,58 +443,22 @@ export class RtcHostTransport implements IGameTransport {
     onReady?: () => void,
     onFailure?: (error: Error) => void,
   ): void {
-    if (this.topology === 'full-mesh') {
-      this.connectMeshCoordinator(peer, onReady, onFailure);
+    if (this.strategy?.connectCoordinator) {
+      this.strategy.connectCoordinator(this.buildTopologyContext(), peer, onReady, onFailure);
       return;
     }
-    const hostPeerId = this.hostPeerId;
-    try {
-      const connection = peer.connect(hostPeerId, {
-        userId: options.userId,
-        ...(this.migrationMode === 'disabled' ? { hostMigrationMode: 'disabled' } : {}),
-      });
-      this.clientConnection = connection;
-      this.listenToConnection(connection, 'client', () => {
-        if (this.clientConnection !== connection || this.peer !== peer) return;
-        this.connected = !this.migrationEvent;
-        this.lastHostActivity = Date.now();
-        this.connecting = false;
-        this.reconnectMode = null;
-        this.clearReconnectTimer();
-        onReady?.();
-        this.notifyPeersChanged();
-        // The roster confirms the elected host identity before migration completes.
-        if (!this.migrationEvent && !this.awaitingHostConfirmation) this.clearMigrationTimer();
-      }, undefined, onFailure);
-    } catch (error) {
-      const connectionError = toError(error);
-      if (this.connecting && onReady) {
-        onFailure?.(connectionError);
-        return;
-      }
-      this.emitError(connectionError);
-      this.scheduleReconnect('client');
-    }
+    onFailure?.(new Error('RTC transport has no topology strategy for client connect.'));
   }
 
   private handlePeerLost(peer: RtcPeer): void {
     if (this.peer !== peer) return;
     this.peer = null;
     this.stopHeartbeat();
-    this.stopMeshTimers();
-    this.meshJoined = false;
+    this.strategy?.cleanup();
     this.connected = false;
     if (this.role === 'client') this.awaitingHostConfirmation = true;
     this.connecting = false;
     const connections = [...this.connections.values()];
-    connections.push(...this.meshConnections.values());
-    this.meshConnections.clear();
-    this.meshUsers.clear();
-    this.meshClaims.clear();
-    this.meshRemoteReady.clear();
-    this.meshReadySent.clear();
-    this.meshActivity.clear();
-    this.meshAttempted.clear();
     if (this.clientConnection) connections.push(this.clientConnection);
     this.connections.clear();
     this.clientConnection = null;
@@ -591,284 +513,7 @@ export class RtcHostTransport implements IGameTransport {
     this.reconnectTimer = null;
   }
 
-  private meshMetadata(purpose: 'join' | 'mesh'): Record<string, unknown> {
-    const options = this.transportOptions;
-    if (!options) throw new Error('RTC mesh transport has no active connection options.');
-    return {
-      userId: options.userId,
-      roomId: options.roomId,
-      topology: 'full-mesh',
-      purpose,
-      hostMigrationMode: this.migrationMode,
-    };
-  }
-
-  private acceptMeshConnection(peer: RtcPeer, connection: RtcDataConnection): void {
-    const metadata = connection.metadata;
-    const userId = getUserId(metadata);
-    if (!isRecord(metadata) || metadata.roomId !== this.transportOptions?.roomId ||
-        !userId || userId === this.transportOptions?.userId ||
-        (metadata.purpose !== 'mesh' && metadata.purpose !== 'join') ||
-        (metadata.purpose === 'join' && !this.isHost())) {
-      this.emitError(new Error('RTC mesh connection has invalid room, identity, or coordinator metadata.'));
-      connection.close();
-      return;
-    }
-    const member = this.members.find((entry) => entry.peerId === connection.peerId);
-    if (member && member.userId !== userId) {
-      this.emitError(new Error('RTC mesh peer identity does not match the room roster.'));
-      connection.close();
-      return;
-    }
-    if (metadata.purpose === 'join' &&
-        this.members.some((entry) => entry.userId === userId && entry.peerId !== connection.peerId)) {
-      this.emitError(new Error(`RTC user "${userId}" is already connected.`));
-      connection.close();
-      return;
-    }
-    this.trackMeshConnection(peer, connection, userId, metadata.purpose === 'join');
-  }
-
-  private connectMeshCoordinator(
-    peer: RtcPeer,
-    onReady?: () => void,
-    onFailure?: (error: Error) => void,
-  ): void {
-    const existing = this.meshConnections.get(this.hostPeerId);
-    if (existing) {
-      this.clientConnection = existing;
-      if (existing.open) existing.send({ type: 'roster-request' });
-      return;
-    }
-    try {
-      const connection = peer.connect(this.hostPeerId, this.meshMetadata('join'));
-      this.clientConnection = connection;
-      const member = this.members.find((entry) => entry.peerId === this.hostPeerId);
-      this.trackMeshConnection(peer, connection, member?.userId ?? null, false, onReady, onFailure);
-    } catch (error) {
-      const failure = toError(error);
-      if (this.connecting && onFailure) onFailure(failure);
-      else {
-        this.emitError(failure);
-        this.scheduleReconnect('client');
-      }
-    }
-  }
-
-  private trackMeshConnection(
-    peer: RtcPeer,
-    connection: RtcDataConnection,
-    claimedUserId: string | null,
-    joining: boolean,
-    onReady?: () => void,
-    onFailure?: (error: Error) => void,
-  ): void {
-    const peerId = connection.peerId;
-    if (this.meshConnections.has(peerId)) {
-      this.emitError(new Error(`RTC mesh already has a connection to "${peerId}".`));
-      connection.close();
-      return;
-    }
-    this.meshConnections.set(peerId, connection);
-    this.meshClaims.set(peerId, claimedUserId);
-    const current = () => this.peer === peer && this.meshConnections.get(peerId) === connection;
-    const closed = () => {
-      this.clearMeshDeadline(connection);
-      if (!current()) return;
-      const userId = this.meshUsers.get(peerId);
-      this.meshConnections.delete(peerId);
-      this.meshUsers.delete(peerId);
-      this.meshClaims.delete(peerId);
-      this.meshRemoteReady.delete(peerId);
-      this.meshReadySent.delete(peerId);
-      this.meshActivity.delete(peerId);
-      if (this.manuallyDisconnected) return;
-      if (this.connecting && this.clientConnection === connection && onFailure) {
-        onFailure(new Error('RTC mesh coordinator connection closed before admission.'));
-        return;
-      }
-      if (this.isHost() && userId && this.connections.get(userId) === connection) {
-        this.connections.delete(userId);
-        this.publishRoster();
-      } else if (this.clientConnection === connection) {
-        this.clientConnection = null;
-        this.connected = false;
-        this.awaitingHostConfirmation = true;
-        this.scheduleReconnect('client');
-        this.scheduleElection();
-      }
-      this.notifyPeersChanged();
-    };
-    connection.onClose(closed);
-    connection.onError((error) => {
-      if (!current()) return;
-      this.emitError(error);
-      closed();
-      connection.close();
-    });
-    connection.onOpen(() => {
-      if (!current()) {
-        connection.close();
-        return;
-      }
-      this.meshActivity.set(peerId, Date.now());
-      const member = this.members.find((entry) => entry.peerId === peerId);
-      if (claimedUserId && ((joining && this.isHost()) || member?.userId === claimedUserId)) {
-        this.meshUsers.set(peerId, claimedUserId);
-      }
-      const userId = this.meshUsers.get(peerId);
-      if (this.isHost() && userId) {
-        const existing = this.connections.get(userId);
-        if (existing && existing !== connection) {
-          this.emitError(new Error(`RTC user "${userId}" is already connected.`));
-          closed();
-          connection.close();
-          return;
-        }
-        this.connections.set(userId, connection);
-        connection.send({ type: 'hello', userId: this.hostUserId, topology: 'full-mesh' });
-        this.publishRoster();
-      }
-      this.confirmMeshReady(peerId, connection);
-      this.notifyPeersChanged();
-    });
-    connection.onData((data) => {
-      if (!current()) return;
-      this.meshActivity.set(peerId, Date.now());
-      if (!isRecord(data) || typeof data.type !== 'string') {
-        this.emitError(new Error('Received an invalid RTC mesh packet.'));
-        return;
-      }
-      if (data.type === 'mesh-ready') {
-        this.meshRemoteReady.add(peerId);
-        this.confirmMeshReady(peerId, connection);
-        this.notifyPeersChanged();
-        return;
-      }
-      const coordinator = !this.isHost() && peerId === this.hostPeerId;
-      if (coordinator && (data.type === 'hello' || data.type === 'roster')) {
-        if (data.topology !== 'full-mesh') {
-          const error = new Error('RTC topology mismatch: expected a full-mesh coordinator.');
-          if (this.connecting && onFailure) onFailure(error);
-          else this.emitError(error);
-          closed();
-          connection.close();
-          return;
-        }
-        this.handlePacket(data, 'client');
-        if (data.type === 'roster' && this.members === data.members) {
-          this.meshJoined = true;
-          this.connected = true;
-          this.connecting = false;
-          this.clearReconnectTimer();
-          this.reconnectMode = null;
-          this.reconcileMesh();
-          onReady?.();
-          this.notifyPeersChanged();
-        }
-        return;
-      }
-      const senderId = this.meshUsers.get(peerId);
-      if (!senderId) {
-        if (data.type !== 'heartbeat') this.emitError(new Error('RTC mesh packet rejected before roster admission.'));
-        return;
-      }
-      if (coordinator && data.type === 'migrate') {
-        this.handlePacket(data, 'client');
-      } else if (this.isHost() && data.type === 'roster-request') {
-        this.publishRoster();
-      } else if (data.type === 'message' && typeof data.event === 'string') {
-        if (data.targetId !== undefined && data.targetId !== this.transportOptions?.userId &&
-            data.targetId !== this.ownPeerId) {
-          this.emitError(new Error('RTC mesh message is addressed to another participant.'));
-          return;
-        }
-        for (const handler of this.messageHandlers) handler(data.event, data.payload, senderId);
-      } else if (data.type === 'roster' || data.type === 'migrate' || data.type === 'hello') {
-        this.emitError(new Error('RTC mesh control packet is not from the current coordinator.'));
-      }
-    });
-    this.meshDeadlines.set(connection, setTimeout(() => {
-      this.meshDeadlines.delete(connection);
-      if (!current()) return;
-      this.emitError(new Error(`RTC mesh connection to "${peerId}" timed out before admission.`));
-      closed();
-      connection.close();
-    }, this.migrationTimeoutMs));
-  }
-
-  private reconcileMesh(): void {
-    const peer = this.peer;
-    if (!peer || this.manuallyDisconnected) return;
-    for (const member of this.members) {
-      if (member.peerId === this.ownPeerId) continue;
-      const connection = this.meshConnections.get(member.peerId);
-      if (connection) {
-        const claim = this.meshClaims.get(member.peerId);
-        if (claim !== null && claim !== member.userId) {
-          this.emitError(new Error('RTC mesh peer identity does not match the room roster.'));
-          connection.close();
-        } else if (connection.open) {
-          this.meshUsers.set(member.peerId, member.userId);
-          this.confirmMeshReady(member.peerId, connection);
-        }
-        continue;
-      }
-      // One deterministic dialer per pair prevents duplicate channels.
-      if (this.isHost() || member.peerId === this.hostPeerId || this.ownPeerId > member.peerId ||
-          (!this.reconnectEnabled && this.meshAttempted.has(member.peerId))) continue;
-      this.meshAttempted.add(member.peerId);
-      try {
-        this.trackMeshConnection(peer, peer.connect(member.peerId, this.meshMetadata('mesh')), member.userId, false);
-      } catch (error) {
-        this.emitError(toError(error));
-      }
-    }
-  }
-
-  private clearMeshDeadline(connection: RtcDataConnection): void {
-    const timer = this.meshDeadlines.get(connection);
-    if (timer !== undefined) clearTimeout(timer);
-    this.meshDeadlines.delete(connection);
-  }
-
-  private confirmMeshReady(peerId: string, connection: RtcDataConnection): void {
-    if (!this.meshJoined || !this.meshUsers.has(peerId) || !connection.open) return;
-    if (!this.meshReadySent.has(peerId)) {
-      this.meshReadySent.add(peerId);
-      connection.send({ type: 'mesh-ready' });
-    }
-    if (this.meshRemoteReady.has(peerId)) this.clearMeshDeadline(connection);
-  }
-
-  private startMeshMaintenance(): void {
-    this.heartbeatTimer = setInterval(() => {
-      for (const [peerId, connection] of this.meshConnections) {
-        if (!connection.open) continue;
-        if (Date.now() - (this.meshActivity.get(peerId) ?? Date.now()) > this.migrationTimeoutMs) {
-          this.emitError(new Error(`RTC mesh peer "${peerId}" heartbeat timed out.`));
-          connection.close();
-          continue;
-        }
-        connection.send({ type: 'heartbeat' });
-        if (peerId === this.hostPeerId && this.awaitingHostConfirmation) {
-          connection.send({ type: 'roster-request' });
-        }
-      }
-    }, Math.max(1, Math.min(2_000, Math.floor(this.migrationTimeoutMs / 3))));
-    if (this.meshRetryTimer !== null) clearInterval(this.meshRetryTimer);
-    if (this.reconnectEnabled) {
-      this.meshRetryTimer = setInterval(() => this.reconcileMesh(), this.reconnectIntervalMs);
-    }
-    this.reconcileMesh();
-  }
-
-  private stopMeshTimers(): void {
-    for (const timer of this.meshDeadlines.values()) clearTimeout(timer);
-    this.meshDeadlines.clear();
-    if (this.meshRetryTimer !== null) clearInterval(this.meshRetryTimer);
-    this.meshRetryTimer = null;
-  }
+  // Mesh logic fully moved to FullMeshStrategy.
 
   private publishRoster(): void {
     if (!this.isHost() || !this.transportOptions) return;
@@ -945,14 +590,16 @@ export class RtcHostTransport implements IGameTransport {
     this.awaitingHostConfirmation = true;
     this.role = target.peerId === this.ownPeerId ? 'host' : 'client';
     this.migrationEvent = { ...target, previousHostId, reason, migrating: true };
-    for (const handler of this.hostChangedHandlers) handler(this.migrationEvent);
+    this.events.emit('hostChanged', this.migrationEvent);
     if (this.topology === 'star') oldClient?.close();
-    else {
-      this.clientConnection = this.meshConnections.get(target.peerId) ?? null;
+    else if (this.strategy instanceof FullMeshStrategy) {
+      const meshConns = this.strategy.getConnections();
+      this.clientConnection = meshConns.get(target.peerId) ?? null;
       if (this.isHost()) {
-        for (const [peerId, connection] of this.meshConnections) {
-          const userId = this.meshUsers.get(peerId);
-          if (userId && connection.open) this.connections.set(userId, connection);
+        for (const [peerId, connection] of meshConns) {
+          const userId = [...meshConns.keys()].includes(peerId) ? peerId : undefined;
+          // userId mapping lives inside strategy; host re-adopts via connections map already
+          if (connection.open) this.connections.set(peerId, connection);
         }
       }
     }
@@ -976,7 +623,7 @@ export class RtcHostTransport implements IGameTransport {
     const event = this.migrationEvent;
     this.migrationEvent = null;
     if (event) {
-      for (const handler of this.hostChangedHandlers) handler({ ...event, migrating: false });
+      this.events.emit('hostChanged', { ...event, migrating: false });
     }
     for (const connection of this.retiredConnections) connection.close();
     this.retiredConnections.clear();
@@ -991,8 +638,8 @@ export class RtcHostTransport implements IGameTransport {
 
   private startHeartbeat(): void {
     this.stopHeartbeat();
-    if (this.topology === 'full-mesh') {
-      this.startMeshMaintenance();
+    if (this.topology === 'full-mesh' && this.strategy?.startMaintenance) {
+      this.strategy.startMaintenance(this.buildTopologyContext());
       return;
     }
     if (this.migrationMode === 'disabled') return;
@@ -1107,18 +754,16 @@ export class RtcHostTransport implements IGameTransport {
       }
     }
 
-    for (const handler of this.messageHandlers) {
-      handler(data.event, data.payload, senderId);
-    }
+    this.events.emit('message', { event: data.event, payload: data.payload, senderId });
   }
 
   private notifyPeersChanged(): void {
     const peers = this.getPeers();
-    for (const handler of this.peersChangedHandlers) handler(peers);
+    this.events.emit('peersChanged', peers);
   }
 
   private emitError(error: Error): void {
-    for (const handler of this.errorHandlers) handler(error);
+    this.events.emit('error', error);
   }
 }
 
@@ -1144,3 +789,12 @@ function isRoomMember(value: unknown): value is RoomMember {
 function toError(error: unknown): Error {
   return error instanceof Error ? error : new Error(String(error));
 }
+
+export { DefaultConnectionStateMachine } from './patterns/ConnectionStateMachine';
+export type { ConnectionStateName, ConnectionStateMachine } from './patterns/ConnectionStateMachine';
+export { EventBus } from './patterns/EventBus';
+export { FullMeshStrategy } from './patterns/FullMeshStrategy';
+export { StarStrategy } from './patterns/StarStrategy';
+export type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy';
+
+

@@ -68,9 +68,11 @@ Then open `http://localhost:8080` in two browser windows.
 
 ## Current development status
 
-The core contracts, PeerJS adapter, RTC host transport, React bindings, and
+The core contracts, PeerJS adapter, RTC host transport (with design-pattern foundations for State and Observer), React bindings, and
 chat demo are included. The authoritative WebSocket server transport is still
 a scaffold and does not yet establish server connections.
+
+See `game-multi-sdk/README.md` for the updated P2P-only Full Mesh development planning, design pattern matrix (https://refactoring.guru/design-patterns), and Auth layer roadmap.
 
 RTC_HOST defaults to **Full Mesh**: each pair of participants has a direct
 bidirectional WebRTC channel, and broadcasts are sent once to each connected
