@@ -1,4 +1,4 @@
-import { createContext, createElement, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import type { IGameTransport, TransportOptions } from '@game-multi-sdk/core';
 
 interface GameContextValue {
@@ -73,7 +73,7 @@ export function GameProvider({ transport, options, children }: GameProviderProps
     error,
   };
 
-  return createElement(GameContext.Provider, { value }, children);
+  return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
 }
 
 export function useGameRoom() {
