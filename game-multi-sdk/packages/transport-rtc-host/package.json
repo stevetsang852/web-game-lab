@@ -1,6 +1,6 @@
 {
   "name": "@game-multi-sdk/transport-rtc-host",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Configurable Full Mesh and Star WebRTC transport for game-multi-sdk",
   "type": "module",
   "main": "./dist/index.js",
