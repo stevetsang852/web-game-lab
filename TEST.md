@@ -3,6 +3,17 @@
 RTC_HOST **Full Mesh** only. Chat bytes go browser-to-browser over WebRTC data channels.
 PeerJS is signaling, not the game server. `transport-server` stays a scaffold.
 
+## Live v0.1.1 repro
+
+Checked from this environment against https://yin-game-lab.grok.me (header `GAME MULTI SDK v0.1.1`, signaling `https://0.peerjs.com`, Full Mesh).
+
+1. Host `ada` creates room `yinbugmvup8d8y` and reaches Connected with **0 connected peers**.
+2. Client `bea` joins the same room and the same endpoint.
+3. Bea never stays in the room. The form returns to Offline with **Connection lost. Reconnecting or electing a new host...** and **Disconnect / stop reconnecting**. The fields stay disabled while that transport is still held.
+4. Ada remains at 0 peers. No chat is possible.
+
+The deployed bundle only calls `strategy.onPeerOpen` for the host, and the mesh deadline is still `migrationTimeoutMs` from the moment `connect()` starts. A redeploy of SDK **0.1.3** clears that path. The same public broker (`https://0.peerjs.com`) with this branch admits two Chrome clients, shows **Party · 2**, and delivers chat both ways (`pubmeshmvup9zbg`).
+
 ## What broke on v0.1.1
 
 Reproduced on https://yin-game-lab.grok.me (SDK **v0.1.1**):
