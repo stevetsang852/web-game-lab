@@ -1,2 +1,3 @@
-export * from './types';
-export * from './peerjs';
+export * from './types.js';
+export * from './peerjs.js';
+export * from './rtc-configuration.js';

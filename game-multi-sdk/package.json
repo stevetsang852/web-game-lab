@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspace=@game-multi-sdk/core && npm run build --workspace=@game-multi-sdk/transport-server && npm run build --workspace=@game-multi-sdk/transport-rtc-host && npm run build --workspace=@game-multi-sdk/react",
-    "test": "npm run build --workspace=@game-multi-sdk/core && npm run build --workspace=@game-multi-sdk/transport-rtc-host && npm test --workspace=@game-multi-sdk/transport-rtc-host",
+    "test": "npm run build --workspace=@game-multi-sdk/core && npm run build --workspace=@game-multi-sdk/transport-rtc-host && npm test --workspace=@game-multi-sdk/core && npm test --workspace=@game-multi-sdk/transport-rtc-host",
     "typecheck": "npm run build --workspace=@game-multi-sdk/core && npm run typecheck --workspace=@game-multi-sdk/core && npm run typecheck --workspace=@game-multi-sdk/transport-server && npm run typecheck --workspace=@game-multi-sdk/transport-rtc-host && npm run typecheck --workspace=@game-multi-sdk/react"
   },
   "devDependencies": {

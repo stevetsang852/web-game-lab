@@ -1,12 +1,11 @@
 import { Peer, type DataConnection, type PeerOptions } from 'peerjs';
+import { resolveRtcConfiguration, type RtcConfigurationOptions } from './rtc-configuration.js';
 
-export interface RtcPeerOptions {
+export interface RtcPeerOptions extends RtcConfigurationOptions {
   /** A fixed PeerJS ID for a host; omit to let PeerJS assign one. */
   id?: string;
   /** Absolute URL of a PeerJS-compatible signaling server. */
   signalingEndpoint: string;
-  /** Optional WebRTC ICE server configuration. */
-  iceServers?: RTCIceServer[];
 }
 
 export interface RtcDataConnection {
@@ -33,7 +32,7 @@ export interface RtcPeer {
 
 /** Create a PeerJS-backed peer while keeping PeerJS types out of consumer packages. */
 export function createRtcPeer(options: RtcPeerOptions): RtcPeer {
-  const peerOptions = getPeerOptions(options.signalingEndpoint, options.iceServers);
+  const peerOptions = getPeerOptions(options);
   const peer = options.id === undefined
     ? new Peer(peerOptions)
     : new Peer(options.id, peerOptions);
@@ -98,7 +97,8 @@ function wrapDataConnection(connection: DataConnection): RtcDataConnection {
   };
 }
 
-function getPeerOptions(endpoint: string, iceServers?: RTCIceServer[]): PeerOptions {
+function getPeerOptions(options: RtcPeerOptions): PeerOptions {
+  const endpoint = options.signalingEndpoint;
   let url: URL;
   try {
     url = new URL(endpoint);
@@ -111,12 +111,13 @@ function getPeerOptions(endpoint: string, iceServers?: RTCIceServer[]): PeerOpti
     throw new Error(`Unsupported PeerJS signaling protocol "${url.protocol}".`);
   }
 
+  const config = resolveRtcConfiguration(options);
   return {
     host: url.hostname,
     port: url.port ? Number(url.port) : (secure ? 443 : 80),
     path: url.pathname === '/' ? '/' : url.pathname.replace(/\/+$/, ''),
     secure,
-    ...(iceServers ? { config: { iceServers } } : {}),
+    ...(config === undefined ? {} : { config }),
   };
 }
 
