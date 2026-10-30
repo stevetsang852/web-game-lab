@@ -30,6 +30,8 @@ PeerJS signaling succeeds. The data channel never opens because ICE has no usabl
 
 Demo **0.2.3** does not pass that STUN-only override. When Advanced is empty it sends Google STUN plus a best-effort public TURN relay at `staticauth.openrelay.metered.ca` (Open Relay / Metered static auth, ports 80 and 443). Custom Advanced URLs replace that list. The timeout text names ICE/NAT and Advanced TURN.
 
+Demo **0.2.4** asks `GET /turn` for standard `iceServers` when Advanced is empty, then uses that list in `rtcConfiguration` (PeerJS signaling stays `https://0.peerjs.com`). Port 53 URLs are dropped. If `/turn` is not configured, it still falls back to the 0.2.3 public relay. The static Grok host cannot mint Cloudflare credentials by itself; see the root README.
+
 This repository does not publish https://yin-game-lab.grok.me. After merge, YIN has to republish the demo before the live page changes. Fullstack does not publish it.
 
 Verify on the live site after that republish: two Chrome windows, Full Mesh, empty Advanced, unique room id, **Party · 2**, chat both ways. A same-machine party against `https://0.peerjs.com` should still connect. If the public relay rejects the shared credentials, put your own TURN URL, username, and credential in Advanced on every window.
@@ -94,10 +96,12 @@ Leave the path at `/`. The PeerJS client appends `peerjs` to that path.
 Same-machine Chrome may hide LAN addresses behind mDNS and then fail ICE.
 Launch those windows with `--disable-features=WebRtcHideLocalIpsWithMdns` if the data channel stays closed while signaling is up.
 
-Hosted and cross-network parties need TURN. Demo 0.2.3 applies a public Open Relay
-when Advanced is empty. PeerJS cloud TURN is not a reliable substitute. The local
-broker above does not relay ICE between networks. To force your own relay, fill
-**Advanced WebRTC / TURN settings** on every window; that list replaces the built-in one.
+Hosted and cross-network parties need TURN. Demo 0.2.4 requests `GET /turn`
+when Advanced is empty (`VITE_TURN_BASE_URL` when the credential service is on
+another origin). PeerJS cloud TURN is not a reliable substitute. If `/turn` is
+down, the demo falls back to the public Open Relay. The local broker above does
+not relay ICE between networks. To force your own relay, fill **Advanced WebRTC /
+TURN settings** on every window; that list replaces the fetched one.
 
 ## Four-client procedure
 
@@ -123,7 +127,7 @@ If a join fails, the form returns to editable and the red error stays visible. F
 
 ## Expected UI
 
-- Header: `GAME MULTI SDK v0.1.3`, `Demo v0.2.3`, and badge **Connected**.
+- Header: `GAME MULTI SDK v0.1.3`, `Demo v0.2.4`, and badge **Connected**.
 - Party row lists four names.
-- Footer: `SDK v0.1.3 · Demo v0.2.3`.
-- Demo package version is 0.2.3 (`package.json` and the `DEMO_VERSION` string).
+- Footer: `SDK v0.1.3 · Demo v0.2.4`.
+- Demo package version is 0.2.4 (`package.json` and the `DEMO_VERSION` string).

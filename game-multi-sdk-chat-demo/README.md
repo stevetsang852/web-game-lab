@@ -10,7 +10,7 @@ Primary HTTPS URL (no local Vite):
 
 https://yin-game-lab.grok.me
 
-The live page is the RTC Chat Room. This checkout is demo **0.2.3** / SDK **0.1.3**.
+The live page is the RTC Chat Room. This checkout is demo **0.2.4** / SDK **0.1.3**.
 Pushing the repository does not update https://yin-game-lab.grok.me; that host
 changes only when it is republished. The page uses PeerJS Cloud at
 `https://0.peerjs.com` (secure WebSocket on port 443 because the page is HTTPS).
@@ -75,8 +75,11 @@ https://yin-game-lab.grok.me.
 
 The Compose build uses the parent directory as its context so it can include
 the sibling `game-multi-sdk` packages. The image build also runs the SDK build,
-the SDK MVP tests, and the demo production build. The runtime uses an
-unprivileged Nginx image and exposes only the static app port.
+the SDK MVP tests, the demo tests, and the demo production build. The runtime
+is a non-root Node process. It serves the static app and `GET /turn` on port
+8080. Set `TURN_PROVIDER`, `CF_TURN_KEY_ID`, and `CF_TURN_KEY_API_TOKEN` in the
+environment or in a gitignored `.env` (see `.env.example`) before starting
+Compose when that container should mint credentials.
 
 The default signaling endpoint is PeerJS Cloud (`https://0.peerjs.com`). You can
 replace it with any compatible PeerJS signaling server. The server is used for
@@ -88,22 +91,54 @@ may require HTTPS outside localhost.
 Same-LAN and same-machine parties can connect with host candidates. A hosted
 room such as https://yin-game-lab.grok.me, or any two browsers on different
 networks, needs a working TURN relay. PeerJS signaling is not that relay.
+Signaling stays on the PeerJS endpoint (default `https://0.peerjs.com`).
 
-Leave **Advanced WebRTC / TURN settings** empty to use the demo defaults:
+Leave **Advanced WebRTC / TURN settings** empty to fetch standard `iceServers`
+from `GET /turn` and pass them as `rtcConfiguration.iceServers`. The response
+shape is portable (`RTCIceServer[]`). The page does not call a Cloudflare SDK
+and does not contain the TURN key or API token.
 
-- Google STUN (`stun.l.google.com` / `stun1.l.google.com`) for server-reflexive
-  candidates.
-- A best-effort public TURN relay on `staticauth.openrelay.metered.ca`
-  (Open Relay / Metered), on ports 80 and 443, UDP and TCP, including `turns:`.
-  The demo mints a short-lived TURN REST username from Open Relay's published
-  static-auth secret and also tries the public `openrelayproject` username.
-  Open Relay may rate-limit or reject these shared credentials.
+- Vite `dev`, Vite `preview`, and Docker request same-origin `/turn`
+  (respecting Vite `BASE_URL`, so a Pages build looks under that prefix).
+- Set `VITE_TURN_BASE_URL` at build time when the credential service is on
+  another origin. Use an origin with no path, or a full URL that already ends
+  in `/turn`.
+- If `/turn` fails, the demo falls back to Google STUN plus a best-effort
+  public TURN relay on `staticauth.openrelay.metered.ca` (Open Relay / Metered),
+  ports 80 and 443, UDP and TCP, including `turns:`. Those shared credentials
+  are published demo defaults, not a private relay, and Open Relay may reject
+  them.
 
-That default list is intentional. An empty panel used to pass Google STUN only.
+That fallback is intentional. An empty panel used to pass Google STUN only.
 PeerJS replaces its whole `config` with the `iceServers` it is given, so a
 STUN-only list removed PeerJS's own TURN entries. Those names
 (`eu-0.turn.peerjs.com`, `us-0.turn.peerjs.com`) have no DNS records, so putting
 them back does not cross NAT either. Do not rely on PeerJS cloud TURN.
+
+### Credential service environment
+
+Set these on the Node process or the Worker. Names only; do not commit values
+and do not prefix them with `VITE_`.
+
+| Name | Role |
+| --- | --- |
+| `TURN_PROVIDER` | `cloudflare` (default). `metered` and `coturn` are reserved. |
+| `CF_TURN_KEY_ID` | Cloudflare Realtime TURN key id. |
+| `CF_TURN_KEY_API_TOKEN` | Bearer token for that key. |
+| `TURN_TTL_SECONDS` | Optional. Default 3600. Integer 1–172800. |
+
+`TURN_PROVIDER=cloudflare` calls
+`POST https://rtc.live.cloudflare.com/v1/turn/keys/$CF_TURN_KEY_ID/credentials/generate-ice-servers`
+with `{"ttl": ...}`. The handler returns the `iceServers` array, removes any
+TURN URL on port 53, and adds public STUN (`stun.cloudflare.com:3478`,
+`stun.l.google.com:19302`) when missing. `cache-control` is `no-store`.
+API reference: https://developers.cloudflare.com/realtime/turn/generate-credentials/
+
+https://yin-game-lab.grok.me is a static republish. It cannot read those
+variables. Deploy `server/worker.mjs` with Wrangler (`npx wrangler deploy` from
+this directory; `wrangler secret put` for the names above) and set
+`VITE_TURN_BASE_URL` when YIN rebuilds the page. Local `.env.example` lists the
+same names for `npm run dev` and Docker.
 
 A local broker (`npx peerjs --port 9000`) only replaces signaling. It does not
 give two networks a path to each other.
@@ -116,7 +151,7 @@ before connecting:
 - Enable **Relay only** to require TURN and verify a relay route instead of
   relying on direct connectivity.
 
-Custom URLs replace the built-in Open Relay list; they are not merged with it.
+Custom URLs replace both the `/turn` list and the Open Relay fallback; they are not merged with either.
 If you set TURN and leave STUN blank, Google STUN is still added. If you set
 STUN URLs, only those STUN URLs are used, plus your TURN server when you
 entered one. TURN URLs accept `turn:` or `turns:` schemes (for example
@@ -177,7 +212,7 @@ replace the `file:` dependencies in `package.json` with the published versions.
 
 ## Versioning
 
-Demo version: **0.2.3**. The header and footer show `SDK_VERSION` from `@game-multi-sdk/core` (currently **0.1.3**) and this demo version (`DEMO_VERSION`).
+Demo version: **0.2.4**. The header and footer show `SDK_VERSION` from `@game-multi-sdk/core` (currently **0.1.3**) and this demo version (`DEMO_VERSION`).
 
 The four-browser Full Mesh procedure is in [TEST.md](../TEST.md).
 
