@@ -30,6 +30,11 @@ export interface RtcPeer {
   onError(callback: (error: Error) => void): void;
 }
 
+const DEFAULT_STUN_URLS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+];
+
 /** Create a PeerJS-backed peer while keeping PeerJS types out of consumer packages. */
 export function createRtcPeer(options: RtcPeerOptions): RtcPeer {
   const peerOptions = getPeerOptions(options);
@@ -111,13 +116,23 @@ function getPeerOptions(options: RtcPeerOptions): PeerOptions {
     throw new Error(`Unsupported PeerJS signaling protocol "${url.protocol}".`);
   }
 
-  const config = resolveRtcConfiguration(options);
+  const resolved = resolveRtcConfiguration(options);
+  const iceServers = resolved?.iceServers && resolved.iceServers.length > 0
+    ? resolved.iceServers
+    : [{ urls: DEFAULT_STUN_URLS }];
+
+  const config: RTCConfiguration = {
+    ...resolved,
+    iceServers,
+    iceCandidatePoolSize: resolved?.iceCandidatePoolSize ?? 10,
+  };
+
   return {
     host: url.hostname,
     port: url.port ? Number(url.port) : (secure ? 443 : 80),
     path: url.pathname === '/' ? '/' : url.pathname.replace(/\/+$/, ''),
     secure,
-    ...(config === undefined ? {} : { config }),
+    config,
   };
 }
 
