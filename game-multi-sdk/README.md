@@ -116,3 +116,107 @@ This repository uses npm workspaces. PeerJS is an internal dependency of
 3. `packages/transport-rtc-host` — RTC Host mode
 4. `packages/react` — React bindings
 5. Spring Boot signaling + server backend
+
+## P2P-only Development Planning (Full Mesh Focus)
+
+**暂时只做 P2P client ↔ client（全网格）方向**是合理的收敛：先把“无媒体服务器、低延迟、小房间”这条路径做扎实，再考虑 SFU/Server 传输。当前默认 Full Mesh、Host Migration、可配置 ICE。重点是把 Mesh 的连接生命周期、信令/发现、消息层和可观测性做可靠。
+
+### P2P-only 的边界
+
+P2P client-client **不等于 serverless**。数据面去中心化，但仍需要：
+
+| 依赖          | 是否可去掉    | 说明 |
+| ----------- | -------- | --- |
+| **信令 / 发现** | 否        | 交换 SDP/ICE 候选需要通道；当前依赖 PeerJS Cloud + Host 的 PeerJS ID。 |
+| **STUN**    | 否        | 获取公网候选，NAT 穿透的基础。 |
+| **TURN**    | 否（严苛网络下） | 对称 NAT / 严格防火墙下必须有中继。 |
+
+目标：**数据面去中心化，信令/穿透依赖最小化且可配置**。
+
+### 优先级
+
+| 优先级 | 事项 | 理由 |
+| ------ | ---- | ---- |
+| **P0** | PeerConnection 状态机 + 超时 + ICE restart + 指数退避 | Mesh 可靠性的地基 |
+| **P0** | 心跳/RTT + 静默故障检测 | 没有它，重连和迁移都是盲目的 |
+| **P0** | 发现阶段单点缓解（房间码/邀请 + 成员列表版本） | Host 迁移后仍能加入 |
+| **P1** | 可靠/不可靠双通道 + 二进制序列化 + 背压 | 游戏状态同步体验 |
+| **P1** | 本地 TURN + 多上下文 E2E + 故障注入 | 可验证地能跑 |
+| **P1** | 房间密码/令牌 + 消息限流 | 基础防护 |
+| **P2** | 状态同步模式文档 + 插值工具 | 提升接入价值 |
+
+### 设计模式应用（依据 https://refactoring.guru/design-patterns）
+
+| 模式 | 应用位置 | 解决的问题 |
+| ---- | -------- | ---------- |
+| **State** | PeerConnection 生命周期（idle → signaling → connecting → connected → degraded → reconnecting → failed → closed） | 散落的回调导致状态不一致 |
+| **Strategy** | TopologyStrategy (FullMesh / Star) | 拓扑行为可替换 |
+| **Observer** | EventBus for messages, peers, errors, host changes | 解耦通知 |
+| **Facade** | RtcHostTransport | 统一入口隐藏复杂性 |
+| **Factory** | PeerFactory | 隔离 PeerJS 创建 |
+| **Decorator** | AuthenticatedTransport (未来) | 不改传输实现加入身份 |
+| **Template Method** | BaseConnectionHandler | 共享超时/重试逻辑 |
+
+## Auth & Identity Layer Planning
+
+接口与领域模型放在 `@game-multi-sdk/core`，具体认证实现单独开 `@game-multi-sdk/auth` 包，传输层通过装饰器/中间件消费认证能力。
+
+### 范围
+
+- 身份标识（稳定 playerId，而非仅 PeerJS ID）
+- 会话管理
+- 房间准入（密码/令牌）
+- 消息真实性（可选签名）
+- 能力/角色（host / player / spectator）
+- 不提供权威反作弊；P2P 下客户端持有完整状态。
+
+### 包结构
+
+```text
+@game-multi-sdk/core          # 领域接口、值对象、状态机基类
+@game-multi-sdk/auth          # 认证策略、Provider、Session 存储
+@game-multi-sdk/transport-rtc-host  # 通过装饰器消费 AuthContext
+@game-multi-sdk/react         # useAuth / useSession hooks
+```
+
+依赖方向：auth → core，transport → core，react → core + auth + transport。
+
+### 设计模式矩阵
+
+见上方，并额外：
+
+- Strategy: AuthStrategy (Anonymous / Password / Token / ChallengeSignature)
+- Factory: AuthStrategyFactory
+- Builder: AuthConfigBuilder
+- Adapter: SessionStoreAdapter
+- Observer: AuthEventBus
+- State: SessionStateMachine
+- Decorator: AuthenticatedTransport
+- Chain of Responsibility: AuthMiddlewareChain
+- Facade: AuthClient
+- Repository: SessionRepository
+- Command: LoginCommand / LogoutCommand
+- Template Method: BaseAuthStrategy
+- Null Object: AnonymousIdentity
+- Value Object: PlayerIdentity / AuthContext (immutable)
+
+详细实现路线图见规划文档。
+
+## Development Order (Updated)
+
+1. Monorepo + core contracts + design pattern foundations (State, Strategy, Observer) — **in progress**
+2. transport-rtc-host Mesh reliability (P0: state machine, heartbeat, discovery)
+3. auth package (interfaces in core, strategies in auth)
+4. react bindings including auth hooks
+5. transport-server (deferred)
+6. Spring Boot signaling + backend (deferred)
+
+### Current refactoring status
+
+- `ConnectionStateMachine` and `EventBus` are integrated into `RtcHostTransport`.
+- **Mesh logic fully moved**: `FullMeshStrategy` owns all mesh connection maps,
+  handshake, reconcile, heartbeat, and send/broadcast.
+- **Star logic fully moved**: `StarStrategy` owns host connection map, client
+  connection, accept/connect, relay send, and peer list.
+  `RtcHostTransport` only selects the strategy and delegates.
+- Pattern unit tests live in `packages/transport-rtc-host/test/patterns.test.mjs`.

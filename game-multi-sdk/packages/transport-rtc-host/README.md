@@ -11,6 +11,25 @@ over WebRTC data channels.
 The PeerJS integration lives in `@game-multi-sdk/core`; this package depends on
 core and does not import or depend on PeerJS directly.
 
+## Design patterns
+
+The transport is being refactored toward the patterns documented at
+https://refactoring.guru/design-patterns:
+
+- **State** — `ConnectionStateMachine` tracks the high-level lifecycle
+  (`idle → signaling → connecting → connected → … → closed`).
+  `RtcHostTransport.connectionState` exposes the current state.
+- **Observer** — `EventBus` delivers `message`, `peersChanged`, `error`, and
+  `hostChanged` events. Public `on*` methods subscribe to it.
+- **Strategy** — `FullMeshStrategy` / `StarStrategy` implement `TopologyStrategy`.
+  All mesh connection state, handshake, reconcile, heartbeat, and send/broadcast
+  logic live inside `FullMeshStrategy`.
+  All star host-relay, client connection, and peer-list logic live inside
+  `StarStrategy`. The transport only selects the strategy and delegates.
+
+These foundations support the P0 reliability work (explicit state machine,
+timeouts, ICE restart) and the future Auth decorator.
+
 `endpoint` must point to a compatible PeerJS signaling server, not a generic
 HTTP API endpoint. Host and clients must use the same signaling server.
 
