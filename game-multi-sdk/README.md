@@ -106,8 +106,10 @@ reconnection, topology mismatch rejection, failed-candidate fallback, silent-hos
 connections, disabled/manual policies, migration cancellation and validation,
 reconnection, and ICE/TURN configuration.
 
-This repository uses npm workspaces. PeerJS is an internal dependency of
-`@game-multi-sdk/core`; other packages consume the RTC peer API through core.
+This repository uses npm workspaces. Internal packages depend on
+`@game-multi-sdk/core` with `*`, which npm links to the local workspace.
+PeerJS is an internal dependency of `@game-multi-sdk/core`; other packages
+consume the RTC peer API through core.
 
 ## Development Order
 

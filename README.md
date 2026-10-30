@@ -30,7 +30,53 @@ npm test
 npm run typecheck
 ```
 
-## Run the chat demo
+## Public chat demo
+
+The primary HTTPS demo is already deployed. No local Vite server is required.
+
+**URL:** https://yin-game-lab.grok.me
+
+That host serves the RTC Chat Room at the site root over HTTPS. The page
+defaults to PeerJS Cloud at `https://0.peerjs.com`. On an HTTPS page the SDK
+opens a secure PeerJS connection (WSS on port 443). Chat payloads still travel
+over WebRTC between browsers. The build currently shown there reports
+**SDK v0.1.1**. Republishing that host is what updates the live copy; this
+repository’s version numbers do not change it by themselves.
+
+### Multi-browser test (4-person party)
+
+Acceptance is a real **4-browser** Full Mesh chat on the public URL, not a
+pair of windows and not localhost. PeerJS Cloud IDs are global. Pick a unique
+room ID for the party instead of the shared default `game-room`.
+
+1. Open https://yin-game-lab.grok.me in **4** browser windows or tabs
+   (separate browsers are fine).
+2. In all four windows, keep the same room ID, the signaling endpoint
+   `https://0.peerjs.com`, and **Full Mesh**.
+3. In the first window, choose **Create room (host)** and connect.
+4. In the other three windows, choose **Join room (client)**, enter that same
+   room ID, and connect. All four must show the room as connected.
+5. Send a chat message from each of the four windows. Confirm every message
+   appears in the other three windows.
+6. Capture a screenshot of each of the four windows showing the shared room,
+   the peer count, and the messages.
+
+### Backup host (GitHub Pages)
+
+GitHub Pages is optional and is not a second acceptance URL. Use it only if
+the Grok host is unavailable. `.github/workflows/pages.yml` is manual
+(`workflow_dispatch`). It builds `game-multi-sdk-chat-demo` with
+`VITE_BASE_PATH=/web-game-lab/` and can publish:
+
+https://stevetsang852.github.io/web-game-lab/
+
+One-time setting, only for this backup: **Settings → Pages → Build and
+deployment → Source: GitHub Actions**, then run **Backup: GitHub Pages chat
+demo** from `main` after `npm run build` succeeds locally. Local `npm run dev`,
+Docker, and https://yin-game-lab.grok.me do not set `VITE_BASE_PATH`, so they
+stay at `/`.
+
+## Run the chat demo locally
 
 Build the SDK first, then install and start the demo:
 
@@ -40,10 +86,11 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL in three browser windows. Use the same room ID, signaling
+Open the Vite URL in four browser windows. Use the same room ID, signaling
 endpoint, and topology in all windows. Create the room in one window and join
-it from the others. **Full Mesh** is selected by default; choose **Star** to
-use host-relayed routing.
+it from the other three. **Full Mesh** is selected by default; choose **Star** to
+use host-relayed routing. The 4-person party acceptance path is
+https://yin-game-lab.grok.me, not this local server.
 
 The demo defaults to the PeerJS Cloud signaling endpoint at
 `https://0.peerjs.com`. The endpoint must support the PeerJS signaling protocol;
@@ -64,7 +111,9 @@ cd game-multi-sdk-chat-demo
 docker compose up --build
 ```
 
-Then open `http://localhost:8080` in two browser windows.
+Then open `http://localhost:8080` in four browser windows. Docker is HTTP on
+localhost only. The 4-person party acceptance test uses
+https://yin-game-lab.grok.me.
 
 ## Current development status
 
@@ -99,8 +148,10 @@ recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/R
 
 ## Versioning
 
-Current SDK version: **0.1.1** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
-Chat demo version: **0.2.1**.
+Current SDK version: **0.1.3** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
+Chat demo version: **0.2.2**.
+
+https://yin-game-lab.grok.me still shows **SDK v0.1.1** until that host is republished.
 
 **Rule**: Whenever you update code (features, fixes, refactors, or consumer-facing docs), also bump the version:
 - Update `SDK_VERSION` in `game-multi-sdk/packages/core/src/version.ts`
