@@ -10,10 +10,12 @@ Primary HTTPS URL (no local Vite):
 
 https://yin-game-lab.grok.me
 
-The live page is the RTC Chat Room, currently showing **SDK v0.1.1**, with
-PeerJS Cloud at `https://0.peerjs.com` (secure WebSocket on port 443 because
-the page is HTTPS). It is served from the site root. Local and Docker builds
-also omit `VITE_BASE_PATH` and stay at `/`.
+The live page is the RTC Chat Room. This checkout is demo **0.2.3** / SDK **0.1.3**.
+Pushing the repository does not update https://yin-game-lab.grok.me; that host
+changes only when it is republished. The page uses PeerJS Cloud at
+`https://0.peerjs.com` (secure WebSocket on port 443 because the page is HTTPS).
+It is served from the site root. Local and Docker builds also omit
+`VITE_BASE_PATH` and stay at `/`.
 
 ### Multi-browser test (4-person party)
 
@@ -83,25 +85,50 @@ may require HTTPS outside localhost.
 
 ## STUN / TURN and restricted networks
 
-Open **Advanced WebRTC / TURN settings** before connecting in each browser:
+Same-LAN and same-machine parties can connect with host candidates. A hosted
+room such as https://yin-game-lab.grok.me, or any two browsers on different
+networks, needs a working TURN relay. PeerJS signaling is not that relay.
+
+Leave **Advanced WebRTC / TURN settings** empty to use the demo defaults:
+
+- Google STUN (`stun.l.google.com` / `stun1.l.google.com`) for server-reflexive
+  candidates.
+- A best-effort public TURN relay on `staticauth.openrelay.metered.ca`
+  (Open Relay / Metered), on ports 80 and 443, UDP and TCP, including `turns:`.
+  The demo mints a short-lived TURN REST username from Open Relay's published
+  static-auth secret and also tries the public `openrelayproject` username.
+  Open Relay may rate-limit or reject these shared credentials.
+
+That default list is intentional. An empty panel used to pass Google STUN only.
+PeerJS replaces its whole `config` with the `iceServers` it is given, so a
+STUN-only list removed PeerJS's own TURN entries. Those names
+(`eu-0.turn.peerjs.com`, `us-0.turn.peerjs.com`) have no DNS records, so putting
+them back does not cross NAT either. Do not rely on PeerJS cloud TURN.
+
+A local broker (`npx peerjs --port 9000`) only replaces signaling. It does not
+give two networks a path to each other.
+
+To use your own relay, open **Advanced WebRTC / TURN settings** in every window
+before connecting:
 
 - Supply STUN and/or TURN URLs, separated by commas or whitespace.
 - Enter your TURN service's temporary username and credential.
 - Enable **Relay only** to require TURN and verify a relay route instead of
   relying on direct connectivity.
 
-These settings are passed as `RTCConfiguration` to the SDK on both host and
-clients. TURN URLs accept `turn:` or `turns:` schemes (for example
-`turns:turn.example.com:443?transport=tcp`). Relay-only mode requires TURN URLs;
-the demo reports missing credentials or invalid URL schemes before connecting.
-When all fields are empty, PeerJS defaults are used. Once custom servers are
-specified, only that server list is used; add any STUN servers you also need.
+Custom URLs replace the built-in Open Relay list; they are not merged with it.
+If you set TURN and leave STUN blank, Google STUN is still added. If you set
+STUN URLs, only those STUN URLs are used, plus your TURN server when you
+entered one. TURN URLs accept `turn:` or `turns:` schemes (for example
+`turns:turn.example.com:443?transport=tcp`). Relay-only mode requires TURN
+URLs; the demo reports missing credentials or invalid URL schemes before
+connecting.
 
 The form keeps credentials in memory, not browser storage or URL parameters;
-the credential input is masked. Use short-lived credentials from an
-authenticated backend, never permanent shared secrets in a frontend bundle.
-Automatic credential refresh is not provided: disconnect and reconnect with
-fresh credentials when required.
+the credential input is masked. For a private relay, use short-lived
+credentials from an authenticated backend. The built-in Open Relay values are
+published demo defaults, not a secret. Automatic credential refresh is not
+provided: disconnect and reconnect with fresh credentials when required.
 
 For manual deployment verification, configure a real TURN service on both
 windows, select relay-only mode, connect, and exchange messages in both
@@ -150,7 +177,7 @@ replace the `file:` dependencies in `package.json` with the published versions.
 
 ## Versioning
 
-Demo version: **0.2.2**. It displays the SDK version (`SDK_VERSION` from `@game-multi-sdk/core`, currently **0.1.3**) in the UI header and footer.
+Demo version: **0.2.3**. The header and footer show `SDK_VERSION` from `@game-multi-sdk/core` (currently **0.1.3**) and this demo version (`DEMO_VERSION`).
 
 The four-browser Full Mesh procedure is in [TEST.md](../TEST.md).
 

@@ -39,9 +39,10 @@ The primary HTTPS demo is already deployed. No local Vite server is required.
 That host serves the RTC Chat Room at the site root over HTTPS. The page
 defaults to PeerJS Cloud at `https://0.peerjs.com`. On an HTTPS page the SDK
 opens a secure PeerJS connection (WSS on port 443). Chat payloads still travel
-over WebRTC between browsers. The build currently shown there reports
-**SDK v0.1.1**. Republishing that host is what updates the live copy; this
-repository’s version numbers do not change it by themselves.
+over WebRTC between browsers, and cross-network rooms need TURN (the demo
+ships a public relay when Advanced ICE is empty). Republishing that host is
+what updates the live copy; this repository’s version numbers do not change
+it by themselves. This checkout is demo **0.2.3** / SDK **0.1.3**.
 
 ### Multi-browser test (4-person party)
 
@@ -149,7 +150,7 @@ recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/R
 ## Versioning
 
 Current SDK version: **0.1.3** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
-Chat demo version: **0.2.2**.
+Chat demo version: **0.2.3**.
 
 A four-browser Full Mesh party check, including the v0.1.1 DataChannel timeout repro, is in [TEST.md](TEST.md).
 
