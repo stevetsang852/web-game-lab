@@ -7,8 +7,8 @@ demo that exercises its WebRTC host transport.
 
 - `game-multi-sdk/` — npm workspace containing the SDK packages:
   - `@game-multi-sdk/core` — shared transport contracts and PeerJS adapter.
-  - `@game-multi-sdk/transport-rtc-host` — host/client WebRTC transport using a
-    star topology.
+  - `@game-multi-sdk/transport-rtc-host` — configurable WebRTC transport:
+    Full Mesh by default, with optional host-relayed Star topology.
   - `@game-multi-sdk/transport-server` — server transport package scaffold.
   - `@game-multi-sdk/react` — React context and hooks for game transports.
 - `game-multi-sdk-chat-demo/` — standalone Vite and React chat application
@@ -26,6 +26,7 @@ demo that exercises its WebRTC host transport.
 cd game-multi-sdk
 npm install
 npm run build
+npm test
 npm run typecheck
 ```
 
@@ -39,14 +40,22 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL in two browser windows. Use the same room ID and signaling
-endpoint in both. Create the room in one window and join it from the other.
+Open the Vite URL in three browser windows. Use the same room ID, signaling
+endpoint, and topology in all windows. Create the room in one window and join
+it from the others. **Full Mesh** is selected by default; choose **Star** to
+use host-relayed routing.
 
 The demo defaults to the PeerJS Cloud signaling endpoint at
 `https://0.peerjs.com`. The endpoint must support the PeerJS signaling protocol;
-chat data is sent directly between browsers over WebRTC. Browsers generally
-require HTTPS outside localhost, and some networks need STUN/TURN configuration.
-The demo currently does not expose ICE server settings.
+chat data travels between browsers over WebRTC, optionally via TURN relays.
+Browsers generally require HTTPS outside localhost. Open **Advanced WebRTC /
+TURN settings** in the demo to configure STUN/TURN URLs, temporary TURN
+credentials, and relay-only mode on both host and clients.
+
+SDK consumers can inject a full `rtcConfiguration: RTCConfiguration`;
+the existing `iceServers` shorthand remains supported. See the
+[RTC transport guide](game-multi-sdk/packages/transport-rtc-host/README.md)
+for configuration precedence and production deployment advice.
 
 To run the demo with Docker Compose instead:
 
@@ -62,3 +71,26 @@ Then open `http://localhost:8080` in two browser windows.
 The core contracts, PeerJS adapter, RTC host transport, React bindings, and
 chat demo are included. The authoritative WebSocket server transport is still
 a scaffold and does not yet establish server connections.
+
+RTC_HOST defaults to **Full Mesh**: each pair of participants has a direct
+bidirectional WebRTC channel, and broadcasts are sent once to each connected
+peer without host forwarding. Set `topology: 'star'` in `TransportOptions` for
+the previous host-relayed behavior. This is a changed default; existing star
+applications must opt in explicitly on every participant.
+
+Start with 4-6 total players and load-test; this is not a guaranteed capacity or
+enforced limit. Mesh uses `N * (N - 1) / 2` pairwise channels, with `N - 1`
+connections per player: connection count grows quadratically, not exponentially.
+It removes the browser host from the data path, not the need for signaling or
+TURN when direct network routes fail.
+
+**Host migration defaults to automatic**, with a 5-second election delay after
+a lost connection; heartbeats also detect silent hosts. Manual handoff is
+available through `transferHost(userId)`. Set `hostMigration.mode` to `manual`
+for explicit handoff only, or `disabled` to opt out. In Mesh, the host is a
+membership/discovery coordinator: established peer routes remain usable while
+it is absent or migrating. New joins still need a reachable coordinator and
+its current PeerJS ID. Migration restores coordination (and routing in Star),
+not application state or lost messages. Browser elections are best-effort and
+can split during network partitions; TURN does not provide consensus or state
+recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/README.md#host-migration).

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { afterEach } from 'node:test';
 import { RtcHostTransport } from '../dist/index.js';
 
 class FakeConnection {
@@ -75,18 +75,28 @@ class FakePeer {
   }
 }
 
+const activeTransports = [];
+afterEach(() => {
+  for (const transport of activeTransports) transport.disconnect();
+  activeTransports.length = 0;
+});
+
 function createHarness() {
   const peers = [];
-  const transport = new RtcHostTransport(() => {
+  const peerOptions = [];
+  const transport = new RtcHostTransport((options) => {
+    peerOptions.push(options);
     const peer = new FakePeer();
     peers.push(peer);
     return peer;
   });
-  return { transport, peers };
+  activeTransports.push(transport);
+  return { transport, peers, peerOptions };
 }
 
 async function connectHost(harness) {
   const pending = harness.transport.connect({
+    topology: 'star',
     role: 'host',
     roomId: 'room-1',
     userId: 'host-user',
@@ -146,6 +156,7 @@ test('host connects, tracks clients, broadcasts messages, and cleans up', async 
 test('client connects to host and reports the host identity', async () => {
   const { transport, peers } = createHarness();
   const pending = transport.connect({
+    topology: 'star',
     role: 'client',
     roomId: 'room-1',
     userId: 'player-1',
@@ -184,6 +195,7 @@ test('validates disconnected sends and unsupported unreliable delivery', async (
 
   const { transport: host, peers } = createHarness();
   const pending = host.connect({
+    topology: 'star',
     role: 'host',
     roomId: 'room-1',
     userId: 'host-user',
@@ -217,6 +229,7 @@ test('routes client-directed messages and rejects unknown targets', async () => 
 test('retries a lost client connection using the configured interval', async () => {
   const { transport, peers } = createHarness();
   const pending = transport.connect({
+    topology: 'star',
     role: 'client',
     roomId: 'room-1',
     userId: 'player-1',
@@ -264,6 +277,7 @@ test('allows reconnect to be disabled and validates the retry interval', async (
   }), /positive number/);
 
   const pending = transport.connect({
+    topology: 'star',
     role: 'client',
     roomId: 'room-1',
     userId: 'player-1',
@@ -282,6 +296,7 @@ test('allows reconnect to be disabled and validates the retry interval', async (
 test('rejects initial client connections that fail before opening', async () => {
   const { transport, peers } = createHarness();
   const pending = transport.connect({
+    topology: 'star',
     role: 'client',
     roomId: 'room-1',
     userId: 'player-1',
@@ -291,3 +306,44 @@ test('rejects initial client connections that fail before opening', async () => 
   peers[0].outgoing.emitError(new Error('connection failed'));
   await assert.rejects(pending, /connection failed/);
 });
+
+for (const role of ['host', 'client']) {
+  test(`forwards full RTC configuration for ${role} and preserves it when recreating the peer`, async (t) => {
+    const { transport, peers, peerOptions } = createHarness();
+    t.after(() => transport.disconnect());
+    const rtcConfiguration = {
+      iceServers: [{
+        urls: ['turn:turn.example.test:3478', 'turns:turn.example.test:443?transport=tcp'],
+        username: 'temporary-user',
+        credential: 'temporary-credential',
+      }],
+      iceTransportPolicy: 'relay',
+      bundlePolicy: 'max-bundle',
+      iceCandidatePoolSize: 1,
+    };
+    const legacyServers = [{ urls: 'stun:legacy.example.test:3478' }];
+    const pending = transport.connect({
+      topology: 'star',
+      role,
+      roomId: 'room-1',
+      userId: 'player-1',
+      endpoint: 'https://peer.example.test',
+      rtcConfiguration,
+      iceServers: legacyServers,
+      reconnect: { intervalMs: 1 },
+    });
+    peers[0].emitOpen();
+    if (role === 'client') peers[0].outgoing.emitOpen();
+    await pending;
+    assert.deepEqual(peerOptions[0].rtcConfiguration, rtcConfiguration);
+    assert.deepEqual(peerOptions[0].iceServers, legacyServers);
+
+    peers[0].emitClose();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(peers.length, 2);
+    assert.deepEqual(peerOptions[1].rtcConfiguration, rtcConfiguration);
+    assert.deepEqual(peerOptions[1].iceServers, legacyServers);
+    peers[1].emitOpen();
+    if (role === 'client') peers[1].outgoing.emitOpen();
+  });
+}

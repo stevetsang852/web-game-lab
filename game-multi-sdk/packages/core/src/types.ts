@@ -1,9 +1,10 @@
 /**
  * Game transport category.
  * - SERVER: Authoritative server mode via WebSocket (e.g. strategy / simulation games)
- * - RTC_HOST: WebRTC star-topology host mode (host = room owner, P2P data channels)
+ * - RTC_HOST: WebRTC full-mesh or star topology with a room coordinator
  */
 export type GameCategory = 'SERVER' | 'RTC_HOST';
+export type RtcTopology = 'full-mesh' | 'star';
 
 /**
  * Connection options required by any transport implementation.
@@ -19,12 +20,22 @@ export interface TransportOptions {
   role?: 'host' | 'client';
   /** Host's PeerJS ID when connecting as a client. Defaults to roomId. */
   hostPeerId?: string;
-  /** Optional WebRTC ICE server configuration (for example, STUN/TURN). */
+  /** RTC topology. Defaults to full-mesh; star routes client traffic through the host. */
+  topology?: RtcTopology;
+  /** Full WebRTC configuration, including TURN credentials and relay-only policy. */
+  rtcConfiguration?: RTCConfiguration;
+  /** STUN/TURN shorthand. rtcConfiguration.iceServers takes precedence when provided. */
   iceServers?: RTCIceServer[];
   /** Automatic reconnect policy. Enabled by default with a 5-second retry interval. */
   reconnect?: {
     enabled?: boolean;
     intervalMs?: number;
+  };
+  /** RTC host election policy. Defaults to auto; manual only permits explicit handoff. */
+  hostMigration?: {
+    mode?: 'auto' | 'manual' | 'disabled';
+    /** Delay before election, and deadline for each candidate connection. Defaults to 5000. */
+    timeoutMs?: number;
   };
 }
 
@@ -41,6 +52,17 @@ export interface SendOptions {
 export type MessageHandler = (event: string, payload: unknown, senderId: string) => void;
 export type PeersChangedHandler = (peerIds: string[]) => void;
 export type TransportErrorHandler = (error: Error) => void;
+export interface HostInfo {
+  userId: string;
+  peerId: string;
+}
+export interface HostChangedEvent extends HostInfo {
+  previousHostId: string;
+  reason: 'manual' | 'automatic';
+  /** True during host/coordinator transition; false when local coordination is ready. */
+  migrating: boolean;
+}
+export type HostChangedHandler = (event: HostChangedEvent) => void;
 
 /**
  * Unified transport contract that all communication drivers must implement.
@@ -79,9 +101,17 @@ export interface IGameTransport {
   /** Subscribe to transport errors, including errors raised after connect resolves. */
   onError?(callback: TransportErrorHandler): () => void;
 
+  /** Request a handoff to a connected userId. Only the current host may call this. */
+  transferHost?(targetId: string): void;
+  /** Current elected host address, suitable for application-level room discovery. */
+  getHost?(): HostInfo | null;
+  onHostChanged?(callback: HostChangedHandler): () => void;
+  /** Local session readiness. Mesh can remain ready while its coordinator migrates. */
+  isConnected?(): boolean;
+
   /** Return the list of currently connected peer userIds (excluding self when applicable). */
   getPeers(): string[];
 
-  /** Whether the current user is the host / room owner. */
+  /** Whether the current user is the host (mesh membership coordinator). */
   isHost(): boolean;
 }

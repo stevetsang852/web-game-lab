@@ -96,6 +96,14 @@ h1 {
 .is-connected .status-dot, .peer-count .status-dot { background: #61d99d; box-shadow: 0 0 10px rgb(97 217 157 / 45%); }
 
 .connection-form { display: grid; gap: 19px; padding: 28px; }
+.connection-fields { display: grid; min-width: 0; gap: 19px; margin: 0; padding: 0; border: 0; }
+.connection-fields:disabled { opacity: .65; }
+.rtc-settings { color: #b6bbca; font-size: 12px; }
+.rtc-settings summary { cursor: pointer; }
+.rtc-settings label { margin-top: 14px; }
+.rtc-settings .form-note { margin-top: 12px; text-align: left; }
+.checkbox-label { display: flex; align-items: center; }
+.checkbox-label input { width: 16px; min-height: 16px; margin: 0; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 
 label { display: grid; min-width: 0; gap: 8px; }
@@ -182,6 +190,8 @@ input:focus, select:focus { border-color: #8870f3; box-shadow: 0 0 0 3px rgb(136
 .message-form input { flex: 1; }
 .send-button { min-width: 85px; padding: 0 16px; }
 .inline-error { padding: 0 24px 12px; }
+.host-controls { padding: 12px 24px; border-bottom: 1px solid #252a38; }
+.host-controls .form-note { text-align: left; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; clip-path: inset(50%); }
 
 footer { margin-top: 18px; color: #767d8d; font-size: 11px; }

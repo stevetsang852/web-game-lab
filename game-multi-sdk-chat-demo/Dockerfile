@@ -13,6 +13,7 @@ RUN npm install --no-audit --no-fund
 
 COPY game-multi-sdk/ ./
 RUN npm run build \
+    && npm test --workspace=@game-multi-sdk/core \
     && npm test --workspace=@game-multi-sdk/transport-rtc-host
 
 WORKDIR /workspace/game-multi-sdk-chat-demo
