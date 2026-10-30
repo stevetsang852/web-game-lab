@@ -10,6 +10,7 @@ interface ChatMessage {
 }
 
 const defaultEndpoint = 'https://0.peerjs.com';
+const DEMO_VERSION = '0.2.1';
 
 export function ChatRoom() {
   const [roomId, setRoomId] = useState('game-room');
@@ -145,6 +146,7 @@ export function ChatRoom() {
           <div>
             <p className="eyebrow">GAME MULTI SDK v{SDK_VERSION}</p>
             <h1>RTC Chat Room</h1>
+            <p className="form-note">Demo v{DEMO_VERSION}</p>
           </div>
           <span className={`connection-badge${connected ? ' is-connected' : ''}`}>
             <span className="status-dot" />
@@ -282,7 +284,7 @@ export function ChatRoom() {
           </div>
         )}
       </section>
-      <footer>Peer-to-peer chat · Powered by WebRTC · SDK v{SDK_VERSION}</footer>
+      <footer>Peer-to-peer chat · Powered by WebRTC · SDK v{SDK_VERSION} · Demo v{DEMO_VERSION}</footer>
     </main>
   );
 }
