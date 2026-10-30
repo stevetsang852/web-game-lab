@@ -12,7 +12,27 @@ Checked from this environment against https://yin-game-lab.grok.me (header `GAME
 3. Bea never stays in the room. The form returns to Offline with **Connection lost. Reconnecting or electing a new host...** and **Disconnect / stop reconnecting**. The fields stay disabled while that transport is still held.
 4. Ada remains at 0 peers. No chat is possible.
 
-The deployed bundle only calls `strategy.onPeerOpen` for the host, and the mesh deadline is still `migrationTimeoutMs` from the moment `connect()` starts. A redeploy of SDK **0.1.3** clears that path. The same public broker (`https://0.peerjs.com`) with this branch admits two Chrome clients, shows **Party · 2**, and delivers chat both ways (`pubmeshmvup9zbg`).
+The deployed bundle only calls `strategy.onPeerOpen` for the host, and the mesh deadline is still `migrationTimeoutMs` from the moment `connect()` starts. A redeploy of SDK **0.1.3** clears that path. The same public broker (`https://0.peerjs.com`) with this branch admits two Chrome clients on one machine, shows **Party · 2**, and delivers chat both ways (`pubmeshmvup9zbg`).
+
+## Hosted timeout after SDK 0.1.3 / demo 0.2.2
+
+Checked on https://yin-game-lab.grok.me with Full Mesh, default `https://0.peerjs.com`, and Advanced STUN/TURN left empty.
+
+1. Same-LAN Party · 2 works.
+2. Two browsers on different networks: the host stays **Connected** with **0 peers**, the joiner returns **Offline**, and both report `timed out before the data channel opened`.
+
+PeerJS signaling succeeds. The data channel never opens because ICE has no usable relay.
+
+- An empty Advanced panel still installed Google STUN only. PeerJS replaces its whole `config` with that `iceServers` list, so the list removed PeerJS's built-in TURN entries instead of merging with them.
+- Those PeerJS TURN hosts (`eu-0.turn.peerjs.com`, `us-0.turn.peerjs.com`) have no DNS records. Restoring the PeerJS defaults does not provide a relay.
+- Same-machine host candidates hide the gap. CSP on grok.me is not the cause.
+- A local PeerJS broker (`npx peerjs`) only replaces signaling. It is not a cross-network ICE fix.
+
+Demo **0.2.3** does not pass that STUN-only override. When Advanced is empty it sends Google STUN plus a best-effort public TURN relay at `staticauth.openrelay.metered.ca` (Open Relay / Metered static auth, ports 80 and 443). Custom Advanced URLs replace that list. The timeout text names ICE/NAT and Advanced TURN.
+
+This repository does not publish https://yin-game-lab.grok.me. After merge, YIN has to republish the demo before the live page changes. Fullstack does not publish it.
+
+Verify on the live site after that republish: two Chrome windows, Full Mesh, empty Advanced, unique room id, **Party · 2**, chat both ways. A same-machine party against `https://0.peerjs.com` should still connect. If the public relay rejects the shared credentials, put your own TURN URL, username, and credential in Advanced on every window.
 
 ## What broke on v0.1.1
 
@@ -73,7 +93,11 @@ Leave the path at `/`. The PeerJS client appends `peerjs` to that path.
 
 Same-machine Chrome may hide LAN addresses behind mDNS and then fail ICE.
 Launch those windows with `--disable-features=WebRtcHideLocalIpsWithMdns` if the data channel stays closed while signaling is up.
-Different networks still need a TURN server (Advanced WebRTC / TURN settings) on every client.
+
+Hosted and cross-network parties need TURN. Demo 0.2.3 applies a public Open Relay
+when Advanced is empty. PeerJS cloud TURN is not a reliable substitute. The local
+broker above does not relay ICE between networks. To force your own relay, fill
+**Advanced WebRTC / TURN settings** on every window; that list replaces the built-in one.
 
 ## Four-client procedure
 
@@ -99,7 +123,7 @@ If a join fails, the form returns to editable and the red error stays visible. F
 
 ## Expected UI
 
-- Header: `GAME MULTI SDK v0.1.3` and badge **Connected**.
+- Header: `GAME MULTI SDK v0.1.3`, `Demo v0.2.3`, and badge **Connected**.
 - Party row lists four names.
-- Footer: `SDK v0.1.3`.
-- Demo package version is 0.2.2 (not printed in the header; the header is the SDK version).
+- Footer: `SDK v0.1.3 · Demo v0.2.3`.
+- Demo package version is 0.2.3 (`package.json` and the `DEMO_VERSION` string).

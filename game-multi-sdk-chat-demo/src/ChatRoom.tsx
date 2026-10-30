@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { RtcHostTransport } from '@game-multi-sdk/transport-rtc-host';
 import { SDK_VERSION } from '@game-multi-sdk/core';
-import { createRtcConfiguration } from './rtc-settings';
+import { createRtcConfiguration, explainConnectionError } from './rtc-settings';
 
 interface ChatMessage {
   id: number;
@@ -10,7 +10,7 @@ interface ChatMessage {
 }
 
 const defaultEndpoint = 'https://0.peerjs.com';
-const DEMO_VERSION = '0.2.1';
+const DEMO_VERSION = '0.2.3';
 
 export function ChatRoom() {
   const [roomId, setRoomId] = useState('game-room');
@@ -66,7 +66,7 @@ export function ChatRoom() {
       if (event.migrating) setError(`Migrating to host ${event.userId}...`);
       else setError('');
     });
-    const unsubscribeErrors = current.onError((reason) => setError(reason.message));
+    const unsubscribeErrors = current.onError((reason) => setError(explainConnectionError(reason.message)));
     return () => {
       unsubscribeMessages();
       unsubscribePeers();
@@ -84,7 +84,7 @@ export function ChatRoom() {
     if (connecting || transport) return;
     setError('');
     try {
-      const rtcConfiguration = createRtcConfiguration({
+      const rtcConfiguration = await createRtcConfiguration({
         stunUrls, turnUrls, turnUsername, turnCredential, relayOnly,
       });
       setMessages([]);
@@ -103,7 +103,7 @@ export function ChatRoom() {
       setCurrentHostPeerId(nextTransport.getHost()?.peerId ?? '');
     } catch (reason) {
       if (!closingRef.current) {
-        setError(reason instanceof Error ? reason.message : String(reason));
+        setError(explainConnectionError(reason instanceof Error ? reason.message : String(reason)));
       }
       closingRef.current = false;
       setTransport(null);
@@ -242,14 +242,14 @@ export function ChatRoom() {
                   <input type="checkbox" checked={relayOnly} onChange={(event) => setRelayOnly(event.target.checked)} />
                   <span>Relay only (require TURN)</span>
                 </label>
-                <p className="form-note">Use short-lived TURN credentials. Settings stay in memory and are not saved to browser storage. Configure both host and clients.</p>
+                <p className="form-note">Leave this panel empty to use the built-in public TURN relay (Open Relay on staticauth.openrelay.metered.ca) plus Google STUN. Custom URLs replace that list. Use the same settings on every window. Credentials stay in memory and are not saved.</p>
               </details>
               <button className="primary-button" type="submit">Connect to room <span aria-hidden="true">→</span></button>
             </fieldset>
             {transport && <button className="text-button" type="button" onClick={disconnect}>Disconnect / stop reconnecting</button>}
             {(connecting || transport) && <p className="form-note" role="status">{connecting ? 'Connecting...' : migrationMode === 'auto' ? 'Connection lost. Reconnecting or electing a new host...' : 'Connection lost. Waiting for the selected host to reconnect...'}</p>}
             {error && <p className="error-message" role="alert">{error}</p>}
-            <p className="form-note">Use the same topology in every window. Full Mesh sends directly between peers; Star relays through the host. Start with 4-6 players and load-test. Neither mode replicates game state. TURN may relay network traffic.</p>
+            <p className="form-note">Use the same topology in every window. Full Mesh sends directly between peers; Star relays through the host. Start with 4-6 players and load-test. Neither mode replicates game state. Hosted rooms on different networks need TURN; an empty Advanced panel already tries a public relay. A local PeerJS broker only changes signaling.</p>
           </form>
         ) : (
           <div className="room-panel">

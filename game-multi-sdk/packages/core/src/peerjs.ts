@@ -117,6 +117,11 @@ function getPeerOptions(options: RtcPeerOptions): PeerOptions {
   }
 
   const resolved = resolveRtcConfiguration(options);
+  // PeerJS replaces its entire default `config` when this `config` is set.
+  // A STUN-only `iceServers` list therefore drops PeerJS TURN
+  // (`*.turn.peerjs.com`, which has no DNS records) instead of merging with it.
+  // Callers that need a cross-NAT relay must pass a working TURN server.
+  // The STUN fallback below applies only when the caller supplied no servers.
   const iceServers = resolved?.iceServers && resolved.iceServers.length > 0
     ? resolved.iceServers
     : [{ urls: DEFAULT_STUN_URLS }];
