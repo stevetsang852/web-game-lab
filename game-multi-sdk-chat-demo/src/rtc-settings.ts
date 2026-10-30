@@ -6,6 +6,11 @@ export interface RtcSettings {
   relayOnly: boolean;
 }
 
+const DEFAULT_STUN_URLS = [
+  'stun:stun.l.google.com:19302',
+  'stun:stun1.l.google.com:19302',
+];
+
 export function createRtcConfiguration(settings: RtcSettings): RTCConfiguration | undefined {
   const stunUrls = parseUrls(settings.stunUrls, /^stuns?:\S+$/i, 'STUN');
   const turnUrls = parseUrls(settings.turnUrls, /^turns?:\S+$/i, 'TURN');
@@ -18,10 +23,13 @@ export function createRtcConfiguration(settings: RtcSettings): RTCConfiguration 
   if (turnUrls.length > 0 && (!settings.turnUsername.trim() || !settings.turnCredential)) {
     throw new Error('Enter the TURN username and credential provided by your TURN service.');
   }
-  if (stunUrls.length === 0 && turnUrls.length === 0) return undefined;
 
   const iceServers: RTCIceServer[] = [];
-  if (stunUrls.length > 0) iceServers.push({ urls: stunUrls });
+  // Always include reliable public STUN so ICE can gather host/srflx candidates
+  // even when the user leaves the Advanced panel empty.
+  const effectiveStun = stunUrls.length > 0 ? stunUrls : DEFAULT_STUN_URLS;
+  iceServers.push({ urls: effectiveStun });
+
   if (turnUrls.length > 0) {
     iceServers.push({
       urls: turnUrls,
@@ -29,6 +37,7 @@ export function createRtcConfiguration(settings: RtcSettings): RTCConfiguration 
       credential: settings.turnCredential,
     });
   }
+
   return {
     iceServers,
     iceTransportPolicy: settings.relayOnly ? 'relay' : 'all',
