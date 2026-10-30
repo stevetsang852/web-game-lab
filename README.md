@@ -99,8 +99,8 @@ recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/R
 
 ## Versioning
 
-Current SDK version: **0.1.0** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
-Chat demo version: **0.2.0**.
+Current SDK version: **0.1.1** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
+Chat demo version: **0.2.1**.
 
 **Rule**: Whenever you update code (features, fixes, refactors, or consumer-facing docs), also bump the version:
 - Update `SDK_VERSION` in `game-multi-sdk/packages/core/src/version.ts`
@@ -113,7 +113,7 @@ The chat demo displays the SDK version in the header and footer.
 Copied from the [Mallow: Ashen Vow](https://github.com/stevetsang852/mallow-ashen-vow) project:
 
 > 謝謝你陪騎士貓走到這裡。  
-> 如果牠的戰鬥讓你覺得過瘓，也想看牠繼續打下去，  
+> 如果牠的戰鬥讓你覺得過癙，也想看牠繼續打下去，  
 > 歡迎用 PayMe 支持我。  
 > 你的一份心意，會變成下一場冒險的燃料。
 
