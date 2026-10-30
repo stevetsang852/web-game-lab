@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { RtcHostTransport } from '@game-multi-sdk/transport-rtc-host';
+import { SDK_VERSION } from '@game-multi-sdk/core';
 import { createRtcConfiguration } from './rtc-settings';
 
 interface ChatMessage {
@@ -142,7 +143,7 @@ export function ChatRoom() {
         <header className="card-header">
           <div className="brand-mark" aria-hidden="true">GM</div>
           <div>
-            <p className="eyebrow">GAME MULTI SDK</p>
+            <p className="eyebrow">GAME MULTI SDK v{SDK_VERSION}</p>
             <h1>RTC Chat Room</h1>
           </div>
           <span className={`connection-badge${connected ? ' is-connected' : ''}`}>
@@ -281,7 +282,7 @@ export function ChatRoom() {
           </div>
         )}
       </section>
-      <footer>Peer-to-peer chat · Powered by WebRTC</footer>
+      <footer>Peer-to-peer chat · Powered by WebRTC · SDK v{SDK_VERSION}</footer>
     </main>
   );
 }

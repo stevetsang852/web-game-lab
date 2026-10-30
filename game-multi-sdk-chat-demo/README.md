@@ -109,3 +109,22 @@ reachability, not consensus or game-state recovery.
 
 Before sharing this demo outside this checkout, publish the SDK packages and
 replace the `file:` dependencies in `package.json` with the published versions.
+
+## Versioning
+
+Demo version: **0.2.0**. It displays the SDK version (`SDK_VERSION` from `@game-multi-sdk/core`, currently **0.1.0**) in the UI header and footer.
+
+**Rule**: When updating the demo or SDK code, also update the versions in `package.json` and the `SDK_VERSION` constant.
+
+## Support the Developer (PayMe)
+
+Copied from the [Mallow: Ashen Vow](https://github.com/stevetsang852/mallow-ashen-vow) project:
+
+> 謝謝你陪騎士貓走到這裡。  
+> 如果牠的戰鬥讓你覺得過瘓，也想看牠繼續打下去，  
+> 歡迎用 PayMe 支持我。  
+> 你的一份心意，會變成下一場冒險的燃料。
+
+[Pay with PayMe](https://payme.hsbc/d6d295dff7854566b4536a98f0b02ef8)
+
+Your support fuels the next adventure.

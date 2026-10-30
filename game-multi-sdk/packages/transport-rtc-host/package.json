@@ -1,26 +1,27 @@
 {
   "name": "@game-multi-sdk/transport-rtc-host",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Configurable Full Mesh and Star WebRTC transport for game-multi-sdk",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    ".": {
+    "." : {
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts"
     }
   },
-  "dependencies": {
-    "@game-multi-sdk/core": "*"
-  },
-  "devDependencies": {
-    "typescript": "^5.6.0"
-  },
+  "files": ["dist"],
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "node --test",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "dev": "tsc -p tsconfig.json --watch"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@game-multi-sdk/core": "workspace:*",
+    "peerjs": "^1.5.5"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
   }
 }
