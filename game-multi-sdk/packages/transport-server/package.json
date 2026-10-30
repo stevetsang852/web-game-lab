@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@game-multi-sdk/core": "workspace:*"
+    "@game-multi-sdk/core": "*"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

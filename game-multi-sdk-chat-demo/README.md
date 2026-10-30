@@ -4,6 +4,40 @@ A standalone React + Vite chat room app that consumes the sibling
 `game-multi-sdk` packages through local npm file dependencies. The demo is
 intentionally outside the SDK npm workspace.
 
+## Public demo
+
+Primary HTTPS URL (no local Vite):
+
+https://yin-game-lab.grok.me
+
+The live page is the RTC Chat Room, currently showing **SDK v0.1.1**, with
+PeerJS Cloud at `https://0.peerjs.com` (secure WebSocket on port 443 because
+the page is HTTPS). It is served from the site root. Local and Docker builds
+also omit `VITE_BASE_PATH` and stay at `/`.
+
+### Multi-browser test (4-person party)
+
+Acceptance is four real browsers in one Full Mesh room on that URL. PeerJS
+Cloud room IDs are global, so choose a unique room ID for the party.
+
+1. Open https://yin-game-lab.grok.me in **4** browser windows or tabs.
+2. Keep the same room ID, `https://0.peerjs.com`, and **Full Mesh** in all four.
+3. First window: **Create room (host)**, then connect.
+4. The other three windows: **Join room (client)** with that room ID, then
+   connect. All four must be in the room.
+5. Send one chat message from each window. Each message must show up in the
+   other three windows.
+6. Screenshot all four windows (shared room, peer count, and messages).
+
+### Backup host (GitHub Pages)
+
+Optional, and not the acceptance URL. Run the manual workflow
+**Backup: GitHub Pages chat demo** (`.github/workflows/pages.yml`) after
+**Settings → Pages → Source** is **GitHub Actions**. That build sets
+`VITE_BASE_PATH=/web-game-lab/` and publishes:
+
+https://stevetsang852.github.io/web-game-lab/
+
 ## Run locally
 
 1. In `game-multi-sdk`, install dependencies and build the SDK packages:
@@ -20,9 +54,10 @@ intentionally outside the SDK npm workspace.
    npm run dev
    ```
 
-3. Open the Vite URL in three browser windows. Keep the same signaling endpoint,
+3. Open the Vite URL in four browser windows. Keep the same signaling endpoint,
    room ID, and **Network topology** in every window. Create the room in one
-   window and join it in the others. Full Mesh is selected by default.
+   window and join it from the other three. Full Mesh is selected by default.
+   The 4-person acceptance path is https://yin-game-lab.grok.me.
 
 ## Run with Docker
 
@@ -32,7 +67,10 @@ From `game-multi-sdk-chat-demo`, build and start the demo:
 docker compose up --build
 ```
 
-Open `http://localhost:8080` in two browser windows to test the chat room.
+Open `http://localhost:8080` in four browser windows to test the chat room.
+Docker serves plain HTTP on localhost. For a public HTTPS session, use
+https://yin-game-lab.grok.me.
+
 The Compose build uses the parent directory as its context so it can include
 the sibling `game-multi-sdk` packages. The image build also runs the SDK build,
 the SDK MVP tests, and the demo production build. The runtime uses an
@@ -112,7 +150,7 @@ replace the `file:` dependencies in `package.json` with the published versions.
 
 ## Versioning
 
-Demo version: **0.2.0**. It displays the SDK version (`SDK_VERSION` from `@game-multi-sdk/core`, currently **0.1.0**) in the UI header and footer.
+Demo version: **0.2.2**. It displays the SDK version (`SDK_VERSION` from `@game-multi-sdk/core`, currently **0.1.3**) in the UI header and footer.
 
 **Rule**: When updating the demo or SDK code, also update the versions in `package.json` and the `SDK_VERSION` constant.
 
