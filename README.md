@@ -96,3 +96,27 @@ its current PeerJS ID. Migration restores coordination (and routing in Star),
 not application state or lost messages. Browser elections are best-effort and
 can split during network partitions; TURN does not provide consensus or state
 recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/README.md#host-migration).
+
+## Versioning
+
+Current SDK version: **0.1.0** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
+Chat demo version: **0.2.0**.
+
+**Rule**: Whenever you update code (features, fixes, refactors, or consumer-facing docs), also bump the version:
+- Update `SDK_VERSION` in `game-multi-sdk/packages/core/src/version.ts`
+- Update the `version` field in all relevant `package.json` files (root, packages/*, and chat-demo)
+
+The chat demo displays the SDK version in the header and footer.
+
+## Support the Developer (PayMe)
+
+Copied from the [Mallow: Ashen Vow](https://github.com/stevetsang852/mallow-ashen-vow) project:
+
+> 謝謝你陪騎士貓走到這裡。  
+> 如果牠的戰鬥讓你覺得過瘓，也想看牠繼續打下去，  
+> 歡迎用 PayMe 支持我。  
+> 你的一份心意，會變成下一場冒險的燃料。
+
+[Pay with PayMe](https://payme.hsbc/d6d295dff7854566b4536a98f0b02ef8)
+
+Your support fuels the next adventure.
