@@ -175,9 +175,11 @@ export class FullMeshStrategy implements TopologyStrategy {
         }
         continue;
       }
-      // One deterministic dialer per pair prevents duplicate channels.
-      if (context.isHost || member.peerId === context.hostPeerId || context.ownPeerId > member.peerId ||
-          (!context.reconnectEnabled && this.attempted.has(member.peerId))) continue;
+      // Aggressive dialer: both sides may initiate. Skip only if we already attempted and reconnect is disabled.
+      // Prefer the lexicographically smaller peerId as the primary dialer to reduce glare, but allow the other side to retry.
+      const shouldSkip = (!context.reconnectEnabled && this.attempted.has(member.peerId)) ||
+        (context.ownPeerId > member.peerId && this.attempted.has(member.peerId));
+      if (shouldSkip) continue;
       this.attempted.add(member.peerId);
       try {
         this.trackConnection(context, peer, peer.connect(member.peerId, this.meshMetadata(context, 'mesh')), member.userId, false);
