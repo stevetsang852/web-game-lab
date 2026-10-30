@@ -1,6 +1,6 @@
 {
   "name": "@game-multi-sdk/react",
-  "version": "0.1.1",
+  "version": "0.1.3",
   "description": "React bindings (Context + Hooks) for game-multi-sdk",
   "type": "module",
   "main": "./dist/index.js",
@@ -17,7 +17,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@game-multi-sdk/core": "workspace:*",
+    "@game-multi-sdk/core": "*",
     "react": "^19.0.0"
   },
   "peerDependencies": {

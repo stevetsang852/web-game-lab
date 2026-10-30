@@ -99,8 +99,10 @@ recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/R
 
 ## Versioning
 
-Current SDK version: **0.1.1** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
-Chat demo version: **0.2.1**.
+Current SDK version: **0.1.3** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
+Chat demo version: **0.2.2**.
+
+A four-browser Full Mesh party check, including the v0.1.1 DataChannel timeout repro, is in [TEST.md](TEST.md).
 
 **Rule**: Whenever you update code (features, fixes, refactors, or consumer-facing docs), also bump the version:
 - Update `SDK_VERSION` in `game-multi-sdk/packages/core/src/version.ts`

@@ -24,6 +24,8 @@ export interface TopologyContext {
   handlePacket: (data: unknown, role: 'host' | 'client', clientUserId?: string) => void;
   scheduleReconnect: (mode: 'client' | 'peer') => void;
   scheduleElection: () => void;
+  noteHostActivity: () => void;
+  markHostUnconfirmed: () => void;
   clearReconnectTimer: () => void;
   setClientConnection: (conn: RtcDataConnection | null) => void;
   setConnected: (value: boolean) => void;
