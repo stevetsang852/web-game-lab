@@ -1,0 +1,63 @@
+# Backup only. The primary public demo is https://yin-game-lab.grok.me.
+# This workflow does not run on pull requests or on every push to main.
+# A maintainer runs it by hand after Pages → Source is GitHub Actions.
+name: "Backup: GitHub Pages chat demo"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install, test, and build the SDK
+        working-directory: game-multi-sdk
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          npm test
+
+      - name: Build the chat demo for GitHub Pages
+        working-directory: game-multi-sdk-chat-demo
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/
+        run: |
+          npm install --no-audit --no-fund
+          npm run build
+          grep -q "/${{ github.event.repository.name }}/assets/" dist/index.html
+          grep -q "https://0.peerjs.com" dist/assets/*.js
+          test -f dist/.nojekyll
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: game-multi-sdk-chat-demo/dist
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
