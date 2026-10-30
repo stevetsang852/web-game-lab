@@ -400,13 +400,16 @@ export class RtcHostTransport implements IGameTransport {
       if (this.peer !== peer || this.manuallyDisconnected) return;
       this.ownPeerId = peerId;
       this.startHeartbeat();
+      // Both host and client must mark the strategy as joined so mesh-ready handshake can proceed.
+      if (this.topology === 'full-mesh') {
+        this.strategy?.onPeerOpen(this.buildTopologyContext());
+      }
       if (this.isHost()) {
         this.hostPeerId = peerId;
         this.hostUserId = options.userId;
         this.connected = true;
         if (this.stateMachine.canTransition('connected')) this.stateMachine.transition('connected');
         if (this.topology === 'full-mesh') {
-          this.strategy?.onPeerOpen(this.buildTopologyContext());
           this.publishRoster();
         }
         this.connecting = false;
@@ -796,5 +799,6 @@ export { EventBus } from './patterns/EventBus';
 export { FullMeshStrategy } from './patterns/FullMeshStrategy';
 export { StarStrategy } from './patterns/StarStrategy';
 export type { TopologyStrategy, TopologyContext } from './patterns/TopologyStrategy';
+
 
 
