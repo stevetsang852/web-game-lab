@@ -36,6 +36,8 @@ await client.connect({
   roomId: 'room-123',
   userId: 'player-1',
   endpoint: 'https://peerjs.example.com',
+  // Enabled by default; retries every 5 seconds.
+  reconnect: { enabled: true, intervalMs: 5000 },
 });
 
 client.send('player-move', { x: 10, y: 20 });
@@ -50,3 +52,9 @@ PeerJS reliability is negotiated for the connection, so per-message
 `SendOptions.reliable: false` is unsupported and throws. The default reliable
 data channel is used. Configure TURN servers through `iceServers` when direct
 ICE connectivity is not available; PeerJS signaling does not relay game data.
+
+Automatic reconnect is enabled by default. RTC clients retry a lost host data
+connection, and both roles recreate the PeerJS signaling peer if it closes.
+Configure it with `reconnect: { enabled: false }` to disable retries or set a
+custom positive `intervalMs` (default: `5000`). Calling `disconnect()` always
+cancels pending retries.

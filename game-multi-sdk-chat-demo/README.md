@@ -34,7 +34,9 @@ docker compose up --build
 
 Open `http://localhost:8080` in two browser windows to test the chat room.
 The Compose build uses the parent directory as its context so it can include
-the sibling `game-multi-sdk` packages.
+the sibling `game-multi-sdk` packages. The image build also runs the SDK build,
+the SDK MVP tests, and the demo production build. The runtime uses an
+unprivileged Nginx image and exposes only the static app port.
 
 The default signaling endpoint is PeerJS Cloud (`https://0.peerjs.com`). You can
 replace it with any compatible PeerJS signaling server. The server is used for

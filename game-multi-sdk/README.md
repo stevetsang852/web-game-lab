@@ -19,11 +19,19 @@ Multiplayer game SDK monorepo supporting two transport modes:
 ```bash
 npm install
 npm run build
+npm test
+npm run typecheck
 ```
 
 See each package's README for usage examples. The RTC host transport requires
 an endpoint compatible with the PeerJS signaling protocol; a generic REST
 signaling endpoint is not sufficient.
+
+`npm test` runs the RTC transport MVP tests with Node.js's built-in test runner.
+The tests use a fake peer, so they do not require a signaling server or browser.
+RTC reconnect is enabled by default and retries every five seconds. Use
+`reconnect: { enabled: false }` or set `intervalMs` in `TransportOptions` to
+customize its behavior.
 
 This repository uses npm workspaces. PeerJS is an internal dependency of
 `@game-multi-sdk/core`; other packages consume the RTC peer API through core.

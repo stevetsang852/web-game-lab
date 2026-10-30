@@ -21,6 +21,11 @@ export interface TransportOptions {
   hostPeerId?: string;
   /** Optional WebRTC ICE server configuration (for example, STUN/TURN). */
   iceServers?: RTCIceServer[];
+  /** Automatic reconnect policy. Enabled by default with a 5-second retry interval. */
+  reconnect?: {
+    enabled?: boolean;
+    intervalMs?: number;
+  };
 }
 
 /**
