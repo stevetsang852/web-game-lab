@@ -1,0 +1,9 @@
+# Optional edge host for GET /turn when the demo itself is static
+# (yin-game-lab.grok.me, GitHub Pages). Secrets are not stored here.
+#   wrangler secret put CF_TURN_KEY_ID
+#   wrangler secret put CF_TURN_KEY_API_TOKEN
+#   wrangler secret put TURN_PROVIDER
+name = "game-lab-turn"
+main = "server/worker.mjs"
+compatibility_date = "2026-10-30"
+workers_dev = true

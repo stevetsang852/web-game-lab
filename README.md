@@ -39,10 +39,11 @@ The primary HTTPS demo is already deployed. No local Vite server is required.
 That host serves the RTC Chat Room at the site root over HTTPS. The page
 defaults to PeerJS Cloud at `https://0.peerjs.com`. On an HTTPS page the SDK
 opens a secure PeerJS connection (WSS on port 443). Chat payloads still travel
-over WebRTC between browsers, and cross-network rooms need TURN (the demo
-ships a public relay when Advanced ICE is empty). Republishing that host is
-what updates the live copy; this repository’s version numbers do not change
-it by themselves. This checkout is demo **0.2.3** / SDK **0.1.3**.
+over WebRTC between browsers, and cross-network rooms need TURN. With Advanced
+ICE left empty, the demo requests standard `iceServers` from `GET /turn` and
+falls back to a public relay if that endpoint is not configured. Republishing
+that host is what updates the live copy; this repository’s version numbers do
+not change it by themselves. This checkout is demo **0.2.4** / SDK **0.1.3**.
 
 ### Multi-browser test (4-person party)
 
@@ -97,8 +98,9 @@ The demo defaults to the PeerJS Cloud signaling endpoint at
 `https://0.peerjs.com`. The endpoint must support the PeerJS signaling protocol;
 chat data travels between browsers over WebRTC, optionally via TURN relays.
 Browsers generally require HTTPS outside localhost. Open **Advanced WebRTC /
-TURN settings** in the demo to configure STUN/TURN URLs, temporary TURN
-credentials, and relay-only mode on both host and clients.
+TURN settings** in the demo to paste STUN/TURN URLs, temporary TURN
+credentials, and relay-only mode on both host and clients. Leave that panel
+empty to use `iceServers` from `GET /turn` (see below).
 
 SDK consumers can inject a full `rtcConfiguration: RTCConfiguration`;
 the existing `iceServers` shorthand remains supported. See the
@@ -113,8 +115,49 @@ docker compose up --build
 ```
 
 Then open `http://localhost:8080` in four browser windows. Docker is HTTP on
-localhost only. The 4-person party acceptance test uses
-https://yin-game-lab.grok.me.
+localhost only. The image serves the static demo and `GET /turn` on port 8080.
+Copy `game-multi-sdk-chat-demo/.env.example` to `.env` and set the server
+variables before `docker compose up` if that container should mint credentials.
+The 4-person party acceptance test uses https://yin-game-lab.grok.me.
+
+## TURN credentials
+
+`GET /turn` returns WebRTC `iceServers` (`RTCIceServer[]` inside
+`{ "iceServers": [...] }`). PeerJS signaling is unchanged. The browser does not
+embed a TURN provider SDK, Cloudflare key, or API token. Manual Advanced URLs
+still replace the fetched list.
+
+Vite dev, Vite preview, and the Docker image serve `/turn` on the same origin.
+A static host cannot mint credentials. Set `VITE_TURN_BASE_URL` at **build**
+time to the credential origin (no path), or to a full URL that already ends in
+`/turn`. If `/turn` is missing, the demo falls back to Google STUN plus the
+public Open Relay.
+
+Server environment (names only; set them on the credential process, never as
+`VITE_` variables):
+
+| Name | Role |
+| --- | --- |
+| `TURN_PROVIDER` | `cloudflare` (default). `metered` and `coturn` are reserved and not implemented. |
+| `CF_TURN_KEY_ID` | Cloudflare Realtime TURN key id. |
+| `CF_TURN_KEY_API_TOKEN` | Bearer token for that key. Server-side only. |
+| `TURN_TTL_SECONDS` | Optional TTL in seconds. Default 3600. Allowed range 1–172800. |
+
+The handler calls Cloudflare’s generate-ice-servers API, drops ICE URLs on
+port 53, and adds any missing public STUN URL
+(`stun.cloudflare.com:3478`, `stun.l.google.com:19302`). Response
+`cache-control` is `no-store`. Provider API reference:
+https://developers.cloudflare.com/realtime/turn/generate-credentials/
+
+https://yin-game-lab.grok.me is a static Grok/Vercel republish of the Vite
+bundle. It does not run this Node process. After merge, YIN republishes the
+demo. For Cloudflare TURN on that host, deploy
+`game-multi-sdk-chat-demo/server/worker.mjs` (`npx wrangler deploy` from
+`game-multi-sdk-chat-demo`, secrets via `wrangler secret put` using the names
+above) and rebuild with `VITE_TURN_BASE_URL` set to the worker origin. The
+GitHub Pages backup reads the repository variable `VITE_TURN_BASE_URL` (a URL,
+not a secret) when it is set. Docker and `npm run dev` do not need that
+variable when `/turn` is on the same origin.
 
 ## Current development status
 
@@ -150,7 +193,7 @@ recovery. See the [migration guide](game-multi-sdk/packages/transport-rtc-host/R
 ## Versioning
 
 Current SDK version: **0.1.3** (exported as `SDK_VERSION` from `@game-multi-sdk/core`).  
-Chat demo version: **0.2.3**.
+Chat demo version: **0.2.4**.
 
 A four-browser Full Mesh party check, including the v0.1.1 DataChannel timeout repro, is in [TEST.md](TEST.md).
 

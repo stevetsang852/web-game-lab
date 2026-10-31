@@ -10,7 +10,7 @@ interface ChatMessage {
 }
 
 const defaultEndpoint = 'https://0.peerjs.com';
-const DEMO_VERSION = '0.2.3';
+const DEMO_VERSION = '0.2.4';
 
 export function ChatRoom() {
   const [roomId, setRoomId] = useState('game-room');
@@ -242,14 +242,14 @@ export function ChatRoom() {
                   <input type="checkbox" checked={relayOnly} onChange={(event) => setRelayOnly(event.target.checked)} />
                   <span>Relay only (require TURN)</span>
                 </label>
-                <p className="form-note">Leave this panel empty to use the built-in public TURN relay (Open Relay on staticauth.openrelay.metered.ca) plus Google STUN. Custom URLs replace that list. Use the same settings on every window. Credentials stay in memory and are not saved.</p>
+                <p className="form-note">Leave this panel empty to fetch standard iceServers from /turn (short-lived credentials; the provider stays on the server). If /turn is unavailable, the demo falls back to Google STUN plus the public Open Relay. Custom URLs replace both. Use the same settings on every window. Credentials stay in memory and are not saved.</p>
               </details>
               <button className="primary-button" type="submit">Connect to room <span aria-hidden="true">→</span></button>
             </fieldset>
             {transport && <button className="text-button" type="button" onClick={disconnect}>Disconnect / stop reconnecting</button>}
             {(connecting || transport) && <p className="form-note" role="status">{connecting ? 'Connecting...' : migrationMode === 'auto' ? 'Connection lost. Reconnecting or electing a new host...' : 'Connection lost. Waiting for the selected host to reconnect...'}</p>}
             {error && <p className="error-message" role="alert">{error}</p>}
-            <p className="form-note">Use the same topology in every window. Full Mesh sends directly between peers; Star relays through the host. Start with 4-6 players and load-test. Neither mode replicates game state. Hosted rooms on different networks need TURN; an empty Advanced panel already tries a public relay. A local PeerJS broker only changes signaling.</p>
+            <p className="form-note">Use the same topology in every window. Full Mesh sends directly between peers; Star relays through the host. Start with 4-6 players and load-test. Neither mode replicates game state. Hosted rooms on different networks need TURN. An empty Advanced panel requests /turn, then falls back to a public relay. A local PeerJS broker only changes signaling. PeerJS signaling stays on the endpoint above.</p>
           </form>
         ) : (
           <div className="room-panel">

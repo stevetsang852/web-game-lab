@@ -6,6 +6,12 @@ services:
     init: true
     ports:
       - "8080:8080"
+    environment:
+      PORT: "8080"
+      TURN_PROVIDER: ${TURN_PROVIDER:-cloudflare}
+      CF_TURN_KEY_ID: ${CF_TURN_KEY_ID:-}
+      CF_TURN_KEY_API_TOKEN: ${CF_TURN_KEY_API_TOKEN:-}
+      TURN_TTL_SECONDS: ${TURN_TTL_SECONDS:-3600}
     read_only: true
     tmpfs:
       - /tmp

@@ -32,15 +32,41 @@ const OPEN_RELAY_TTL_SECONDS = 6 * 60 * 60;
 const DATA_CHANNEL_TIMEOUT =
   /timed out before the data channel opened|data channel timed out before it opened/i;
 
+export interface IceLookup {
+  fetchImpl?: typeof fetch;
+  /** Absolute credential URL. Defaults to same-origin `/turn` in the browser. */
+  turnEndpoint?: string;
+}
+
+/**
+ * Credential URL. `configuredBase` is an origin or an absolute `/turn` URL.
+ * An empty base uses `origin` + `pageBase` (Vite `BASE_URL`).
+ */
+export function resolveTurnEndpoint(options: {
+  configuredBase?: string;
+  pageBase?: string;
+  origin?: string;
+}): string | undefined {
+  const configured = options.configuredBase?.trim();
+  if (configured) {
+    if (/\/turn\/?$/i.test(configured)) return configured.replace(/\/$/, '');
+    const withSlash = configured.endsWith('/') ? configured : `${configured}/`;
+    return new URL('turn', withSlash).href;
+  }
+  if (!options.origin) return undefined;
+  const pageBase = options.pageBase?.trim() || '/';
+  const absoluteBase = new URL(pageBase, options.origin.endsWith('/') ? options.origin : `${options.origin}/`);
+  const baseHref = absoluteBase.href.endsWith('/') ? absoluteBase.href : `${absoluteBase.href}/`;
+  return new URL('turn', baseHref).href;
+}
+
 export async function createRtcConfiguration(
   settings: RtcSettings,
   nowMs = Date.now(),
+  lookup?: IceLookup,
 ): Promise<RTCConfiguration> {
   const stunUrls = parseUrls(settings.stunUrls, /^stuns?:\S+$/i, 'STUN');
   const turnUrls = parseUrls(settings.turnUrls, /^turns?:\S+$/i, 'TURN');
-  if (settings.relayOnly && turnUrls.length === 0) {
-    throw new Error('Relay-only mode requires a TURN server.');
-  }
   if (turnUrls.length === 0 && (settings.turnUsername || settings.turnCredential)) {
     throw new Error('TURN credentials require a TURN server URL.');
   }
@@ -49,14 +75,31 @@ export async function createRtcConfiguration(
   }
 
   // Empty Advanced ICE must not install Google STUN alone: PeerJS replaces its
-  // whole config with that list. Omit is not enough either — PeerJS cloud TURN
-  // is unreachable, and the adapter still fills a STUN-only config when no
-  // servers are passed. Ship a public TURN relay instead.
+  // whole config with that list. Ask the same-origin (or VITE_TURN_BASE_URL)
+  // credential endpoint for standard iceServers first. If that host is down,
+  // keep the public relay so a static republish still has a best-effort path.
   if (stunUrls.length === 0 && turnUrls.length === 0) {
+    const hosted = await loadHostedIceServers(lookup);
+    if (hosted && hosted.length > 0) {
+      if (settings.relayOnly && !iceServersIncludeTurn(hosted)) {
+        throw new Error('Relay-only mode requires a TURN server.');
+      }
+      return {
+        iceServers: hosted,
+        iceTransportPolicy: settings.relayOnly ? 'relay' : 'all',
+      };
+    }
+    if (settings.relayOnly) {
+      throw new Error('Relay-only mode requires a TURN server.');
+    }
     return {
       iceServers: await defaultIceServers(nowMs),
       iceTransportPolicy: 'all',
     };
+  }
+
+  if (settings.relayOnly && turnUrls.length === 0) {
+    throw new Error('Relay-only mode requires a TURN server.');
   }
 
   const iceServers: RTCIceServer[] = [];
@@ -79,7 +122,91 @@ export async function createRtcConfiguration(
 
 export function explainConnectionError(message: string): string {
   if (!DATA_CHANNEL_TIMEOUT.test(message)) return message;
-  return `${message} ICE could not open the data channel across NAT. Set a TURN server under Advanced WebRTC / TURN settings on every window (PeerJS cloud TURN is unreliable; a local PeerJS broker only replaces signaling and does not fix cross-network ICE).`;
+  return `${message} ICE could not open the data channel across NAT. An empty Advanced panel requests short-lived iceServers from /turn and otherwise uses the public relay. Set a TURN server under Advanced WebRTC / TURN settings on every window (PeerJS cloud TURN is unreliable; a local PeerJS broker only replaces signaling and does not fix cross-network ICE).`;
+}
+
+async function loadHostedIceServers(lookup?: IceLookup): Promise<RTCIceServer[] | undefined> {
+  const endpoint = lookup?.turnEndpoint ?? browserTurnEndpoint();
+  if (!endpoint) return undefined;
+  const fetchImpl = lookup?.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+  if (!fetchImpl) return undefined;
+  try {
+    const response = await fetchImpl(endpoint, {
+      method: 'GET',
+      cache: 'no-store',
+      credentials: 'omit',
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return undefined;
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.includes('json')) return undefined;
+    return parseHostedIceServers(await response.json());
+  } catch {
+    return undefined;
+  }
+}
+
+function browserTurnEndpoint(): string | undefined {
+  const origin = typeof location === 'undefined' ? undefined : location.origin;
+  return resolveTurnEndpoint({
+    configuredBase: readViteEnv('VITE_TURN_BASE_URL'),
+    pageBase: readViteEnv('BASE_URL') ?? '/',
+    origin,
+  });
+}
+
+function readViteEnv(name: string): string | undefined {
+  const meta = import.meta as ImportMeta & { env?: Record<string, unknown> };
+  const value = meta.env?.[name];
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+function parseHostedIceServers(body: unknown): RTCIceServer[] | undefined {
+  const list = Array.isArray(body)
+    ? body
+    : (isRecord(body) && 'iceServers' in body ? body.iceServers : undefined);
+  if (!Array.isArray(list) || list.length === 0) return undefined;
+  const servers: RTCIceServer[] = [];
+  for (const entry of list) {
+    if (!isRecord(entry)) return undefined;
+    const rawUrls: unknown[] = Array.isArray(entry.urls) ? entry.urls : [entry.urls];
+    if (!rawUrls.every((url): url is string => typeof url === 'string' && /^(stuns?|turns?):/i.test(url))) return undefined;
+    const urls = rawUrls.filter((url) => !usesBlockedBrowserPort(url));
+    if (urls.length === 0) continue;
+    const server: RTCIceServer = { urls: urls.length === 1 ? urls[0] : urls };
+    const hasUsername = typeof entry.username === 'string' && entry.username.length > 0;
+    const hasCredential = typeof entry.credential === 'string' && entry.credential.length > 0;
+    if (hasUsername !== hasCredential) return undefined;
+    if (hasUsername && hasCredential) {
+      server.username = entry.username as string;
+      server.credential = entry.credential as string;
+    }
+    servers.push(server);
+  }
+  return servers.length > 0 ? servers : undefined;
+}
+
+function usesBlockedBrowserPort(url: string): boolean {
+  const schemeSep = url.indexOf(':');
+  if (schemeSep <= 0) return false;
+  const rest = url.slice(schemeSep + 1);
+  const queryAt = rest.search(/[?#]/);
+  const authority = queryAt === -1 ? rest : rest.slice(0, queryAt);
+  const colon = authority.lastIndexOf(':');
+  if (colon === -1) return false;
+  return authority.slice(colon + 1) === '53';
+}
+
+function iceServersIncludeTurn(servers: RTCIceServer[]): boolean {
+  return servers.some((server) => {
+    const urls = Array.isArray(server.urls) ? server.urls : [server.urls];
+    return urls.some((url) => /^turns?:/i.test(url));
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 async function defaultIceServers(nowMs: number): Promise<RTCIceServer[]> {
