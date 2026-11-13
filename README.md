@@ -13,6 +13,10 @@ demo that exercises its WebRTC host transport.
   - `@game-multi-sdk/react` — React context and hooks for game transports.
 - `game-multi-sdk-chat-demo/` — standalone Vite and React chat application
   consuming the local SDK packages.
+- `web-lab-sdk/` — sibling npm workspace for `@web-lab-sdk/auth`,
+  `@web-lab-sdk/payments`, and `@web-lab-sdk/web3`. It lives alongside this
+  multiplayer SDK and does not change it. Design and skeleton only. See
+  `web-lab-sdk/README.md`.
 
 ## Requirements
 
