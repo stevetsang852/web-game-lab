@@ -90,22 +90,31 @@ export class PaymentsClient {
   }
 
   private async runCheckout(provider: PaymentPort, sku: string, idempotencyKey: string): Promise<Invoice> {
-    const invoice = this.publish(provider, await provider.checkout(sku, idempotencyKey));
+    const invoice = this.publish(provider, await provider.checkout(sku, idempotencyKey), sku, idempotencyKey);
     this.payments.notify({ state: invoice.state, invoice });
     return invoice;
   }
 
-  private publish(provider: PaymentPort, invoice: Invoice): Invoice {
+  private publish(provider: PaymentPort, invoice: Invoice, sku: string, idempotencyKey: string): Invoice {
     if (!invoice || invoice.providerId !== provider.id || invoice.currency !== provider.currency) {
       throw new SdkError(ErrorCodes.InvoiceMismatch, 'Invoice does not match the payment adapter.');
     }
-    if (!isInvoiceState(invoice.state)) {
-      throw new SdkError(ErrorCodes.InvoiceTransitionForbidden, 'Unknown invoice state.');
-    }
-    if (invoice.entitlementGranted && invoice.state !== 'APPLIED') {
+    if (invoice.sku !== sku || invoice.idempotencyKey !== idempotencyKey) {
       throw new SdkError(
         ErrorCodes.InvoiceMismatch,
-        'An entitlement is granted only when the invoice reaches APPLIED.',
+        'Invoice sku or idempotencyKey does not match the checkout request.',
+      );
+    }
+    if (!isInvoiceState(invoice.state) || (invoice.state !== 'INVOICE_OPEN' && invoice.state !== 'PAID')) {
+      throw new SdkError(
+        ErrorCodes.InvoiceTransitionForbidden,
+        'checkout may only return INVOICE_OPEN or PAID. APPLIED and REFUNDED are later transitions.',
+      );
+    }
+    if (invoice.entitlementGranted) {
+      throw new SdkError(
+        ErrorCodes.InvoiceMismatch,
+        'checkout cannot grant an entitlement. That happens only on a later APPLIED transition.',
       );
     }
     if (!provider.settles) {

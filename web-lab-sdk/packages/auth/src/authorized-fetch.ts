@@ -1,6 +1,7 @@
 import {
   OFFLINE_DEMO_ACCOUNT_PREFIX,
   OFFLINE_DEMO_TOKEN_PREFIX,
+  isIssuedServerSession,
 } from './session.js';
 import type { Session } from './types.js';
 
@@ -14,7 +15,7 @@ export type FetchLike = (
  * Offline demo tokens return null so a production caller does not attach them.
  */
 export function authorizationHeader(session: Session | null | undefined): string | null {
-  if (!session || session.origin !== 'server') return null;
+  if (!isIssuedServerSession(session)) return null;
   if (!session.token || session.token.startsWith(OFFLINE_DEMO_TOKEN_PREFIX)) return null;
   if (session.accountId.startsWith(OFFLINE_DEMO_ACCOUNT_PREFIX)) return null;
   return `Bearer ${session.token}`;

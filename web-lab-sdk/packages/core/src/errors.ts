@@ -19,6 +19,7 @@ export const ErrorCodes = {
   WalletConnectRequiresGesture: 'WALLET_CONNECT_REQUIRES_GESTURE',
   WalletDisabled: 'WALLET_DISABLED',
   WalletNotConnected: 'WALLET_NOT_CONNECTED',
+  WalletProviderMismatch: 'WALLET_PROVIDER_MISMATCH',
   WalletOperationReserved: 'WALLET_OPERATION_RESERVED',
   AccountOwnership: 'ACCOUNT_OWNERSHIP',
 } as const;

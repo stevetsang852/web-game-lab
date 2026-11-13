@@ -16,7 +16,12 @@ export class Observer<T> {
 
   notify(event: T): void {
     for (const listener of [...this.listeners]) {
-      listener(event);
+      try {
+        listener(event);
+      } catch {
+        // One subscriber cannot cancel the operation that already completed,
+        // and cannot block the remaining subscribers.
+      }
     }
   }
 }

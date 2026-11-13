@@ -60,16 +60,21 @@ test('public package names stay split from core, payments, wallets, and realtime
     const pkg = JSON.parse(readFileSync(new URL(`packages/${dir}/package.json`, root), 'utf8'));
     assert.equal(pkg.name, name);
     assert.equal(pkg.private, undefined);
+    assert.equal(pkg.dependencies?.['@web-lab-sdk/core'], undefined);
+    assert.equal(pkg.devDependencies['@web-lab-sdk/core'], '*');
+    const built = readFileSync(new URL(`packages/${dir}/dist/index.js`, root), 'utf8');
+    assert.equal(built.includes('@web-lab-sdk/core'), false);
+    assert.equal(built.includes('_core/index.js'), true);
     const deps = { ...pkg.dependencies, ...pkg.devDependencies };
     for (const banned of ['peerjs', 'stripe', '@stripe/stripe-js', '@tonconnect/sdk']) {
       assert.equal(deps[banned], undefined, banned);
     }
   }
   const auth = JSON.parse(readFileSync(new URL('packages/auth/package.json', root), 'utf8'));
-  assert.equal(auth.dependencies['@web-lab-sdk/payments'], undefined);
-  assert.equal(auth.dependencies['@web-lab-sdk/web3'], undefined);
+  assert.equal(auth.dependencies?.['@web-lab-sdk/payments'], undefined);
+  assert.equal(auth.dependencies?.['@web-lab-sdk/web3'], undefined);
   const payments = JSON.parse(readFileSync(new URL('packages/payments/package.json', root), 'utf8'));
-  assert.equal(payments.dependencies['@web-lab-sdk/web3'], undefined);
+  assert.equal(payments.dependencies?.['@web-lab-sdk/web3'], undefined);
   const core = JSON.parse(readFileSync(new URL('packages/core/package.json', root), 'utf8'));
   assert.equal(core.private, true);
   assert.equal(core.name, '@web-lab-sdk/core');
