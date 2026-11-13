@@ -22,6 +22,11 @@ Games depend on the three public entry points. They do not import a provider
 SDK. Auth does not import payments or wallets, and payments does not sell
 through a wallet.
 
+`@web-lab-sdk/core` is not published and is not a game-facing SDK. It is a
+dev dependency of the workspace build only. That build copies its output into
+each public package's `dist/_core` and rewrites imports, so installing
+`@web-lab-sdk/auth`, `payments`, or `web3` does not fetch core from a registry.
+
 ## Patterns
 
 - **Strategy + Adapter.** `IdentityPort`, `PaymentPort`, and `WalletPort` are the ports. Telegram, Google, Apple, Stars, IAP, Stripe, TON Connect, and WalletConnect are adapters behind those ports.

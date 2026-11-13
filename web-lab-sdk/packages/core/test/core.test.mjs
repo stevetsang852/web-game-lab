@@ -42,6 +42,17 @@ test('observer notifies subscribers and stops after unsubscribe', () => {
   assert.deepEqual(seen, ['INVOICE_OPEN']);
 });
 
+test('one observer listener cannot block the others', () => {
+  const events = new Observer();
+  const seen = [];
+  events.subscribe(() => {
+    throw new Error('listener failed');
+  });
+  events.subscribe((value) => seen.push(value));
+  assert.doesNotThrow(() => events.notify('INVOICE_OPEN'));
+  assert.deepEqual(seen, ['INVOICE_OPEN']);
+});
+
 test('client option bags cannot carry provider secrets', () => {
   assert.doesNotThrow(() => rejectClientSecrets({ authEndpoint: 'https://auth.example.test/session' }));
   assert.throws(
