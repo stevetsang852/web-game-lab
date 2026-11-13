@@ -317,6 +317,48 @@ test('Telegram and Google adapters post to the server and do not mint sessions',
   assert.equal(emailedAccount.getSession(), null);
 });
 
+test('link refuses a supplied session for a different account', async () => {
+  const requests = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    requests.push(body);
+    const accountId = body.assertion === 'client-b' ? 'acc_b' : 'acc_a';
+    return jsonResponse({
+      accountId,
+      token: `token-${accountId}`,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      identities: [{ provider: body.provider, subject: `${accountId}-sub` }],
+    });
+  };
+  const clientA = new WebFactory().create({ authEndpoint: ENDPOINT, fetchImpl });
+  const clientB = new WebFactory().create({ authEndpoint: ENDPOINT, fetchImpl });
+  const sessionA = await clientA.authenticate('google', { assertion: 'client-a' });
+  await clientB.authenticate('google', { assertion: 'client-b' });
+  const before = requests.length;
+  await rejects(
+    () => clientB.link({ provider: 'apple', assertion: 'apple-token', session: sessionA }),
+    'LINK_REJECTED',
+  );
+  assert.equal(requests.length, before);
+  assert.equal(clientB.getAccessToken(), 'token-acc_b');
+  assert.equal(clientA.getAccessToken(), 'token-acc_a');
+});
+
+test('createAuthorizedFetch ignores a session the server did not issue', async () => {
+  let authorization = 'unset';
+  await createAuthorizedFetch({
+    accountId: 'acc_1',
+    token: 'forged-token',
+    expiresAt: '2099-01-01T00:00:00.000Z',
+    identities: [{ provider: 'google', subject: 'google-sub' }],
+    origin: 'server',
+  }, async (_url, init) => {
+    authorization = new Headers(init?.headers).get('authorization');
+    return new Response(null, { status: 204 });
+  })('https://game.example.test/me');
+  assert.equal(authorization, null);
+});
+
 test('a new provider can be registered on web without changing core', async () => {
   const client = new WebFactory().create();
   client.register(new TelegramIdentityAdapter(), { primary: true });

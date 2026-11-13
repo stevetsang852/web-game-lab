@@ -59,6 +59,12 @@ export class Web3Client {
     }
     const provider = this.registry.require(providerId);
     const account = await provider.connect();
+    if (!account || account.provider !== provider.id) {
+      throw new SdkError(
+        ErrorCodes.WalletProviderMismatch,
+        `Wallet result provider "${String(account?.provider)}" does not match adapter "${provider.id}".`,
+      );
+    }
     if (provider.id === 'noop' || account.connected !== true || !account.address) {
       throw new SdkError(
         ErrorCodes.WalletNotConnected,

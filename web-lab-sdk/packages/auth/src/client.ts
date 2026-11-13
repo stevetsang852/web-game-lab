@@ -78,9 +78,15 @@ export class AuthClient {
     if (typeof provider.link !== 'function') {
       throw new SdkError(ErrorCodes.NotImplemented, `${request.provider} does not support linking.`);
     }
-    const previousAccountId = request.mode === 'session' ? request.session?.accountId : undefined;
+    const activeAccountId = this.session?.accountId;
     const linked = await provider.link(request);
-    if (previousAccountId && linked.accountId !== previousAccountId) {
+    if (activeAccountId && linked.accountId !== activeAccountId) {
+      throw new SdkError(
+        ErrorCodes.LinkRejected,
+        'Linking must keep the active accountId and must not open a new account.',
+      );
+    }
+    if (request.mode === 'session' && request.session && linked.accountId !== request.session.accountId) {
       throw new SdkError(
         ErrorCodes.LinkRejected,
         'Linking must keep the current accountId and must not open a new account.',

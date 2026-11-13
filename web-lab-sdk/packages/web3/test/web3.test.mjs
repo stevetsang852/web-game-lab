@@ -106,6 +106,17 @@ test('connect notifies after a gesture, and a wallet cannot mint or own the acco
     provider: 'walletconnect',
     address: 'wc-addr',
   });
+  const mismatched = new WebFactory().create();
+  mismatched.register({
+    id: 'walletconnect',
+    async connect() {
+      return { provider: 'ton_connect', address: 'EQ_test', connected: true, accountId: 'acc_1' };
+    },
+  });
+  await rejects(() => mismatched.connect('walletconnect', userGesture()), 'WALLET_PROVIDER_MISMATCH');
+  assert.equal(mismatched.isConnected(), false);
+  assert.equal(mismatched.getAccount(), null);
+
   assert.throws(
     () => client.register({
       id: 'ton_connect',

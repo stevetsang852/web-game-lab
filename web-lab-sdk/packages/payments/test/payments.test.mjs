@@ -168,6 +168,76 @@ test('a stub cannot pretend the invoice settled, and items wait for APPLIED', as
   await rejects(() => early.checkout('potion', 'idem-early-1', 'stripe'), 'INVOICE_MISMATCH');
 });
 
+test('checkout keeps a completed invoice when a listener throws', async () => {
+  let calls = 0;
+  const client = new WebFactory().create();
+  client.register({
+    id: 'noop',
+    currency: 'NONE',
+    settles: false,
+    async checkout(sku, idempotencyKey) {
+      calls += 1;
+      return {
+        id: 'noop:listener',
+        sku,
+        idempotencyKey,
+        providerId: 'noop',
+        currency: 'NONE',
+        state: 'INVOICE_OPEN',
+        entitlementGranted: false,
+      };
+    },
+  });
+  client.onPayment(() => {
+    throw new Error('listener failed');
+  });
+  const invoice = await client.checkout('potion', 'idem-listener-1');
+  const replay = await client.checkout('potion', 'idem-listener-1');
+  assert.equal(replay, invoice);
+  assert.equal(calls, 1);
+});
+
+test('checkout rejects an invoice for a different sku, key, or later state', async () => {
+  const mismatch = new WebFactory().create();
+  mismatch.register({
+    id: 'noop',
+    currency: 'NONE',
+    settles: false,
+    async checkout(sku, idempotencyKey) {
+      return {
+        id: 'noop:wrong',
+        sku: `${sku}-other`,
+        idempotencyKey,
+        providerId: 'noop',
+        currency: 'NONE',
+        state: 'INVOICE_OPEN',
+        entitlementGranted: false,
+      };
+    },
+  });
+  await rejects(() => mismatch.checkout('potion', 'idem-sku-mismatch'), 'INVOICE_MISMATCH');
+
+  const applied = new WebFactory().create();
+  applied.register({
+    id: 'stripe',
+    currency: 'USD',
+    settles: true,
+    async checkout(sku, idempotencyKey) {
+      return {
+        id: 'invoice-applied',
+        sku,
+        idempotencyKey,
+        providerId: 'stripe',
+        currency: 'USD',
+        state: 'APPLIED',
+        entitlementGranted: true,
+        providerChargeId: 'ch_test',
+      };
+    },
+  });
+  await rejects(() => applied.checkout('potion', 'idem-applied-1', 'stripe'), 'INVOICE_TRANSITION_FORBIDDEN');
+});
+
 test('NoopPayments itself never returns PAID or APPLIED', async () => {
   const invoice = await new NoopPayments().checkout('potion', 'idem-direct-1');
   assert.equal(invoice.state, 'INVOICE_OPEN');

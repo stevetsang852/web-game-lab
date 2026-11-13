@@ -80,9 +80,14 @@ export function parseLinkRequest(input: unknown, currentSession: Session | null)
   if (record.session != null && !isIssuedServerSession(record.session)) {
     throw new SdkError(ErrorCodes.LinkRejected, 'The supplied session is not a server-issued session.');
   }
-  const session = (isIssuedServerSession(record.session) ? record.session : null) ?? (
-    currentSession && isIssuedServerSession(currentSession) ? currentSession : null
-  );
+  const supplied = isIssuedServerSession(record.session) ? record.session : null;
+  if (supplied && currentSession && supplied.accountId !== currentSession.accountId) {
+    throw new SdkError(
+      ErrorCodes.LinkRejected,
+      'Refusing to link with a session for a different account than the active client session.',
+    );
+  }
+  const session = supplied ?? (currentSession && isIssuedServerSession(currentSession) ? currentSession : null);
   if (!session) {
     throw new SdkError(
       ErrorCodes.LinkRejected,
