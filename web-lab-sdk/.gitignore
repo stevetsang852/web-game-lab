@@ -1,5 +1,9 @@
 node_modules/
 dist/
+*.js
+*.js.map
+*.d.ts
+*.d.ts.map
 *.log
 .DS_Store
 .env
