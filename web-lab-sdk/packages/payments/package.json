@@ -1,0 +1,26 @@
+{
+  "name": "@web-lab-sdk/payments",
+  "version": "0.0.1",
+  "description": "Payments facade and Stars, IAP, and Stripe adapters for web-lab-sdk. Skeleton only.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@web-lab-sdk/core": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

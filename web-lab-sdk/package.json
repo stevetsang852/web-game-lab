@@ -1,0 +1,21 @@
+{
+  "name": "web-lab-sdk",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Auth, payments, and wallet facades for Web Game Lab. Design and skeleton only.",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=@web-lab-sdk/core && npm run build --workspace=@web-lab-sdk/auth && npm run build --workspace=@web-lab-sdk/payments && npm run build --workspace=@web-lab-sdk/web3",
+    "typecheck": "npm run build --workspace=@web-lab-sdk/core && npm run typecheck --workspace=@web-lab-sdk/core && npm run typecheck --workspace=@web-lab-sdk/auth && npm run typecheck --workspace=@web-lab-sdk/payments && npm run typecheck --workspace=@web-lab-sdk/web3",
+    "test": "npm run build && npm test --workspaces --if-present && node --test test/environments.test.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  }
+}

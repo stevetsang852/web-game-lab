@@ -1,0 +1,24 @@
+{
+  "name": "@web-lab-sdk/core",
+  "private": true,
+  "version": "0.0.1",
+  "description": "Private Result, error, registry, and observer types shared by web-lab-sdk. Not a game-facing SDK.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "node --test",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}
